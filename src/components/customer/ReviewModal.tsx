@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { X, Star, MessageSquare, Check, Sparkles } from 'lucide-react';
 
@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { submitReview, activeTable } = useRestaurant();
+  const { mutationError, submitReview, activeTable } = useRestaurant();
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>('');
   const [selectedTags, setSelectedTags] = useState<string[]>(['Fresh Ingredients', 'Fast Service']);
@@ -24,6 +24,10 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  const [submitting, setSubmitting] = useState(false);
+  const sending = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
   if (!isOpen) return null;
 
   const availableTags = [
@@ -38,15 +42,25 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
   ];
 
   const toggleTag = (tag: string) => {
-    setSelectedTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag],
     );
   };
 
-  const handleSubmit = () => {
-    submitReview(rating, comment.trim() || 'Had a great dining experience!', selectedTags);
+  const handleSubmit = async () => {
+    if (sending.current) return;
+    sending.current = true;
+    setSubmitting(true);
+    const accepted = await submitReview(
+      rating,
+      comment.trim() || 'Had a great dining experience!',
+      selectedTags,
+    );
+    sending.current = false;
+    setSubmitting(false);
+    if (!accepted) return;
     setSubmitted(true);
-    setTimeout(() => {
+    timer.current = setTimeout(() => {
       setSubmitted(false);
       onClose();
     }, 1500);
@@ -58,9 +72,14 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-150"
     >
       <div
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         className="bg-[#fcfcfb] w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl border border-[#ebebe8] animate-in zoom-in-95 duration-150"
       >
+        {mutationError && (
+          <p role="alert" className="p-3 text-red-700 bg-red-50 text-sm">
+            {mutationError}
+          </p>
+        )}
         {/* Header */}
         <div className="p-4 border-b border-[#ebebe8] flex items-center justify-between bg-[#fcfcfb]">
           <div className="flex items-center gap-2.5">
@@ -69,7 +88,9 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
             <div>
               <h3 className="font-bold text-sm text-[#16342b]">Rate Your Experience</h3>
-              <p className="text-[11px] text-[#70706b]">Table {activeTable?.tableNumber || '12'} • Feedback</p>
+              <p className="text-[11px] text-[#70706b]">
+                Table {activeTable?.tableNumber || '12'} • Feedback
+              </p>
             </div>
           </div>
           <button
@@ -88,7 +109,8 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
             <h3 className="font-bold text-base text-[#16342b]">Thank You for Your Feedback!</h3>
             <p className="text-xs text-[#70706b]">
-              Your review helps us maintain the highest standard of culinary quality and hospitality.
+              Your review helps us maintain the highest standard of culinary quality and
+              hospitality.
             </p>
           </div>
         ) : (
@@ -96,7 +118,7 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
             {/* Star Picker */}
             <div className="flex flex-col items-center justify-center py-2">
               <div className="flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map(star => (
+                {[1, 2, 3, 4, 5].map((star) => (
                   <button
                     key={star}
                     type="button"
@@ -126,7 +148,7 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 What did you like most?
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {availableTags.map(tag => {
+                {availableTags.map((tag) => {
                   const isSelected = selectedTags.includes(tag);
                   return (
                     <button
@@ -154,7 +176,7 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <textarea
                 rows={3}
                 value={comment}
-                onChange={e => setComment(e.target.value)}
+                onChange={(e) => setComment(e.target.value)}
                 placeholder="The Arctic Salmon was grilled to perfection and the sauce was amazing..."
                 className="w-full p-3 rounded-xl bg-[#f4f4f2] border border-[#ebebe8] text-xs text-[#242424] focus:outline-none focus:bg-[#fcfcfb] focus:border-[#16342b]"
               />
@@ -162,6 +184,7 @@ export const ReviewModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
             {/* Submit */}
             <button
+              disabled={submitting}
               onClick={handleSubmit}
               className="w-full bg-[#16342b] text-white py-3.5 rounded-xl font-semibold text-xs uppercase tracking-wider hover:bg-[#2d4b41] transition-all shadow-sm cursor-pointer"
             >

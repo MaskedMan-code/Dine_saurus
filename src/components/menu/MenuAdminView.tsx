@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { MENU_IMAGE_PLACEHOLDER } from '../../lib/placeholder';
+import React, { useRef, useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { MenuItem, MenuCategory, ModifierGroup } from '../../types';
 import {
@@ -32,7 +33,17 @@ export const MenuAdminView: React.FC = () => {
     saveMenuItem,
     deleteMenuItem,
     saveCategory,
+    mutationError,
   } = useRestaurant();
+
+  const writeLock = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [activeTabCategory, setActiveTabCategory] = useState<string>('all');
+  const [editingItem, setEditingItem] = useState<Partial<MenuItem> | null>(null);
+  const [isItemModalOpen, setIsItemModalOpen] = useState<boolean>(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
+  const [newCatName, setNewCatName] = useState<string>('');
 
   if (!restaurant) {
     return (
@@ -42,23 +53,13 @@ export const MenuAdminView: React.FC = () => {
     );
   }
 
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeTabCategory, setActiveTabCategory] = useState<string>('all');
-  const [editingItem, setEditingItem] = useState<Partial<MenuItem> | null>(null);
-  const [isItemModalOpen, setIsItemModalOpen] = useState<boolean>(false);
-  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
-  const [newCatName, setNewCatName] = useState<string>('');
-
-  const filteredItems = menuItems.filter(item => {
+  const filteredItems = menuItems.filter((item) => {
     if (activeTabCategory !== 'all' && item.categoryId !== activeTabCategory) {
       return false;
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return (
-        item.name.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q)
-      );
+      return item.name.toLowerCase().includes(q) || item.description.toLowerCase().includes(q);
     }
     return true;
   });
@@ -70,7 +71,8 @@ export const MenuAdminView: React.FC = () => {
       description: '',
       price: 12.0,
       currency: restaurant.currencyCode || 'USD',
-      imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
+      imageUrl:
+        'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
       isVegetarian: false,
       isVegan: false,
       isGlutenFree: false,
@@ -88,47 +90,59 @@ export const MenuAdminView: React.FC = () => {
     setIsItemModalOpen(true);
   };
 
-  const handleSaveItemSubmit = (e: React.FormEvent) => {
+  const handleSaveItemSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem || !editingItem.name || !editingItem.categoryId) return;
+    if (writeLock.current || !editingItem || !editingItem.name || !editingItem.categoryId) return;
+    writeLock.current = true;
+    setSaving(true);
+    try {
+      const itemToSave: MenuItem = {
+        id: editingItem.id || `item_${Date.now()}`,
+        categoryId: editingItem.categoryId,
+        name: editingItem.name,
+        description: editingItem.description || '',
+        price: Number(editingItem.price) || 0,
+        currency: editingItem.currency || restaurant.currencyCode || 'USD',
+        imageUrl: editingItem.imageUrl || '',
+        isVegetarian: !!editingItem.isVegetarian,
+        isVegan: !!editingItem.isVegan,
+        isGlutenFree: !!editingItem.isGlutenFree,
+        isFeatured: !!editingItem.isFeatured,
+        isBestseller: !!editingItem.isBestseller,
+        isSoldOut: !!editingItem.isSoldOut,
+        preparationTimeMinutes: Number(editingItem.preparationTimeMinutes) || 15,
+        modifierGroups: editingItem.modifierGroups || [],
+      };
 
-    const itemToSave: MenuItem = {
-      id: editingItem.id || `item_${Date.now()}`,
-      categoryId: editingItem.categoryId,
-      name: editingItem.name,
-      description: editingItem.description || '',
-      price: Number(editingItem.price) || 0,
-      currency: editingItem.currency || restaurant.currencyCode || 'USD',
-      imageUrl: editingItem.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
-      isVegetarian: !!editingItem.isVegetarian,
-      isVegan: !!editingItem.isVegan,
-      isGlutenFree: !!editingItem.isGlutenFree,
-      isFeatured: !!editingItem.isFeatured,
-      isBestseller: !!editingItem.isBestseller,
-      isSoldOut: !!editingItem.isSoldOut,
-      preparationTimeMinutes: Number(editingItem.preparationTimeMinutes) || 15,
-      modifierGroups: editingItem.modifierGroups || [],
-    };
-
-    saveMenuItem(itemToSave);
-    setIsItemModalOpen(false);
-    setEditingItem(null);
+      if (!(await saveMenuItem(itemToSave))) return;
+      setIsItemModalOpen(false);
+      setEditingItem(null);
+    } finally {
+      writeLock.current = false;
+      setSaving(false);
+    }
   };
 
-  const handleAddCategory = (e: React.FormEvent) => {
+  const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCatName.trim()) return;
+    if (writeLock.current || !newCatName.trim()) return;
+    writeLock.current = true;
+    setSaving(true);
+    try {
+      const newCat: MenuCategory = {
+        id: `cat_${Date.now()}`,
+        name: newCatName.trim(),
+        sortOrder: categories.length + 1,
+        isActive: true,
+      };
 
-    const newCat: MenuCategory = {
-      id: `cat_${Date.now()}`,
-      name: newCatName.trim(),
-      sortOrder: categories.length + 1,
-      isActive: true,
-    };
-
-    saveCategory(newCat);
-    setNewCatName('');
-    setIsCategoryModalOpen(false);
+      if (!(await saveCategory(newCat))) return;
+      setNewCatName('');
+      setIsCategoryModalOpen(false);
+    } finally {
+      writeLock.current = false;
+      setSaving(false);
+    }
   };
 
   return (
@@ -141,7 +155,9 @@ export const MenuAdminView: React.FC = () => {
           </div>
           <div>
             <h2 className="font-semibold text-lg text-slate-900">Menu & Catalog Management</h2>
-            <p className="text-xs text-slate-500">Curate dishes, customize modifiers, price points, and manage live 86/sold-out status</p>
+            <p className="text-xs text-slate-500">
+              Curate dishes, customize modifiers, price points, and manage live 86/sold-out status
+            </p>
           </div>
         </div>
 
@@ -177,8 +193,8 @@ export const MenuAdminView: React.FC = () => {
           >
             All Items ({menuItems.length})
           </button>
-          {categories.map(cat => {
-            const count = menuItems.filter(i => i.categoryId === cat.id).length;
+          {categories.map((cat) => {
+            const count = menuItems.filter((i) => i.categoryId === cat.id).length;
             return (
               <button
                 key={cat.id}
@@ -202,7 +218,7 @@ export const MenuAdminView: React.FC = () => {
             type="text"
             placeholder="Search items by name..."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
           />
         </div>
@@ -223,8 +239,8 @@ export const MenuAdminView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {filteredItems.map(item => {
-                const cat = categories.find(c => c.id === item.categoryId);
+              {filteredItems.map((item) => {
+                const cat = categories.find((c) => c.id === item.categoryId);
 
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
@@ -232,13 +248,19 @@ export const MenuAdminView: React.FC = () => {
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
                         <img
-                          src={item.imageUrl}
+                          src={item.imageUrl || MENU_IMAGE_PLACEHOLDER}
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = MENU_IMAGE_PLACEHOLDER;
+                          }}
                           alt={item.name}
                           className="w-12 h-12 rounded-lg object-cover border border-slate-200 flex-shrink-0"
                         />
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-slate-900 text-sm">{item.name}</span>
+                            <span className="font-semibold text-slate-900 text-sm">
+                              {item.name}
+                            </span>
                             {item.isBestseller && (
                               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                                 Bestseller
@@ -250,7 +272,9 @@ export const MenuAdminView: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <p className="text-slate-500 line-clamp-1 text-[11px] max-w-sm">{item.description}</p>
+                          <p className="text-slate-500 line-clamp-1 text-[11px] max-w-sm">
+                            {item.description}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -264,7 +288,8 @@ export const MenuAdminView: React.FC = () => {
 
                     {/* Price */}
                     <td className="py-3 px-4 font-semibold text-slate-900 text-sm">
-                      {restaurant.currencySymbol}{item.price.toFixed(2)}
+                      {restaurant.currencySymbol}
+                      {item.price.toFixed(2)}
                     </td>
 
                     {/* Dietary Tags & Modifiers */}
@@ -303,7 +328,11 @@ export const MenuAdminView: React.FC = () => {
                             : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                         }`}
                       >
-                        {item.isSoldOut ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        {item.isSoldOut ? (
+                          <EyeOff className="w-3.5 h-3.5" />
+                        ) : (
+                          <Eye className="w-3.5 h-3.5" />
+                        )}
                         <span>{item.isSoldOut ? 'Sold Out (86)' : 'In Stock'}</span>
                       </button>
                     </td>
@@ -347,6 +376,11 @@ export const MenuAdminView: React.FC = () => {
               {editingItem.id ? 'Edit Menu Item' : 'Create New Menu Item'}
             </h3>
 
+            {mutationError && (
+              <p role="alert" className="text-red-700 bg-red-50 p-3 rounded-lg mb-3 text-sm">
+                {mutationError}
+              </p>
+            )}
             <form onSubmit={handleSaveItemSubmit} className="space-y-4 text-xs">
               <div>
                 <label className="block font-medium text-slate-700 mb-1">Item Title</label>
@@ -355,7 +389,7 @@ export const MenuAdminView: React.FC = () => {
                   required
                   placeholder="e.g. Nordic Gravlax Toast"
                   value={editingItem.name || ''}
-                  onChange={e => setEditingItem(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => setEditingItem((prev) => ({ ...prev, name: e.target.value }))}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
                 />
               </div>
@@ -365,10 +399,12 @@ export const MenuAdminView: React.FC = () => {
                   <label className="block font-medium text-slate-700 mb-1">Category</label>
                   <select
                     value={editingItem.categoryId || categories[0]?.id}
-                    onChange={e => setEditingItem(prev => ({ ...prev, categoryId: e.target.value }))}
+                    onChange={(e) =>
+                      setEditingItem((prev) => ({ ...prev, categoryId: e.target.value }))
+                    }
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-xs"
                   >
-                    {categories.map(c => (
+                    {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
@@ -377,49 +413,68 @@ export const MenuAdminView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Price ({restaurant.currencySymbol})</label>
+                  <label className="block font-medium text-slate-700 mb-1">
+                    Price ({restaurant.currencySymbol})
+                  </label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     required
                     value={editingItem.price || 0}
-                    onChange={e => setEditingItem(prev => ({ ...prev, price: parseFloat(e.target.value) }))}
+                    onChange={(e) =>
+                      setEditingItem((prev) => ({ ...prev, price: parseFloat(e.target.value) }))
+                    }
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Description & Ingredients</label>
+                <label className="block font-medium text-slate-700 mb-1">
+                  Description & Ingredients
+                </label>
                 <textarea
                   rows={3}
                   placeholder="Describe flavors, allergens, origins..."
                   value={editingItem.description || ''}
-                  onChange={e => setEditingItem(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e) =>
+                    setEditingItem((prev) => ({ ...prev, description: e.target.value }))
+                  }
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
                 />
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 mb-1">Image URL (Unsplash or direct asset)</label>
+                <label className="block font-medium text-slate-700 mb-1">
+                  Image URL (Unsplash or direct asset)
+                </label>
                 <input
                   type="url"
                   placeholder="https://images.unsplash.com/..."
                   value={editingItem.imageUrl || ''}
-                  onChange={e => setEditingItem(prev => ({ ...prev, imageUrl: e.target.value }))}
+                  onChange={(e) =>
+                    setEditingItem((prev) => ({ ...prev, imageUrl: e.target.value }))
+                  }
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">Prep Time (minutes)</label>
+                  <label className="block font-medium text-slate-700 mb-1">
+                    Prep Time (minutes)
+                  </label>
                   <input
                     type="number"
                     min="1"
                     value={editingItem.preparationTimeMinutes || 15}
-                    onChange={e => setEditingItem(prev => ({ ...prev, preparationTimeMinutes: Number(e.target.value) }))}
+                    onChange={(e) =>
+                      setEditingItem((prev) => ({
+                        ...prev,
+                        preparationTimeMinutes: Number(e.target.value),
+                      }))
+                    }
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-xs"
                   />
                 </div>
@@ -429,7 +484,9 @@ export const MenuAdminView: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={!!editingItem.isSoldOut}
-                      onChange={e => setEditingItem(prev => ({ ...prev, isSoldOut: e.target.checked }))}
+                      onChange={(e) =>
+                        setEditingItem((prev) => ({ ...prev, isSoldOut: e.target.checked }))
+                      }
                       className="rounded text-rose-600 focus:ring-rose-500"
                     />
                     <span className="text-rose-700 font-semibold">Mark as Sold Out (86)</span>
@@ -439,13 +496,17 @@ export const MenuAdminView: React.FC = () => {
 
               {/* Badges toggles */}
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2">
-                <p className="font-semibold text-slate-800 text-[11px] uppercase tracking-wider">Dietary & Flags</p>
+                <p className="font-semibold text-slate-800 text-[11px] uppercase tracking-wider">
+                  Dietary & Flags
+                </p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={!!editingItem.isVegetarian}
-                      onChange={e => setEditingItem(prev => ({ ...prev, isVegetarian: e.target.checked }))}
+                      onChange={(e) =>
+                        setEditingItem((prev) => ({ ...prev, isVegetarian: e.target.checked }))
+                      }
                       className="rounded text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-slate-700">Vegetarian</span>
@@ -455,7 +516,9 @@ export const MenuAdminView: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={!!editingItem.isVegan}
-                      onChange={e => setEditingItem(prev => ({ ...prev, isVegan: e.target.checked }))}
+                      onChange={(e) =>
+                        setEditingItem((prev) => ({ ...prev, isVegan: e.target.checked }))
+                      }
                       className="rounded text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-slate-700">Vegan</span>
@@ -465,7 +528,9 @@ export const MenuAdminView: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={!!editingItem.isGlutenFree}
-                      onChange={e => setEditingItem(prev => ({ ...prev, isGlutenFree: e.target.checked }))}
+                      onChange={(e) =>
+                        setEditingItem((prev) => ({ ...prev, isGlutenFree: e.target.checked }))
+                      }
                       className="rounded text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-slate-700">Gluten-Free</span>
@@ -475,7 +540,9 @@ export const MenuAdminView: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={!!editingItem.isBestseller}
-                      onChange={e => setEditingItem(prev => ({ ...prev, isBestseller: e.target.checked }))}
+                      onChange={(e) =>
+                        setEditingItem((prev) => ({ ...prev, isBestseller: e.target.checked }))
+                      }
                       className="rounded text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-slate-700">Bestseller</span>
@@ -485,7 +552,9 @@ export const MenuAdminView: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={!!editingItem.isFeatured}
-                      onChange={e => setEditingItem(prev => ({ ...prev, isFeatured: e.target.checked }))}
+                      onChange={(e) =>
+                        setEditingItem((prev) => ({ ...prev, isFeatured: e.target.checked }))
+                      }
                       className="rounded text-indigo-600 focus:ring-indigo-500"
                     />
                     <span className="text-slate-700">Featured</span>
@@ -506,6 +575,7 @@ export const MenuAdminView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving}
                   className="px-4 py-2 font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition shadow-sm cursor-pointer"
                 >
                   Save Item
@@ -521,15 +591,22 @@ export const MenuAdminView: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-sm w-full p-6">
             <h3 className="font-semibold text-base text-slate-900 mb-4">Add Menu Category</h3>
+            {mutationError && (
+              <p role="alert" className="text-red-700 bg-red-50 p-3 rounded-lg mb-3 text-sm">
+                {mutationError}
+              </p>
+            )}
             <form onSubmit={handleAddCategory} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Category Title</label>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Category Title
+                </label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Artisan Desserts"
                   value={newCatName}
-                  onChange={e => setNewCatName(e.target.value)}
+                  onChange={(e) => setNewCatName(e.target.value)}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -544,6 +621,7 @@ export const MenuAdminView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={saving}
                   className="px-4 py-2 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition shadow-sm cursor-pointer"
                 >
                   Create Category

@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+.cache/
+node_modules.locked/
+test-results/
+playwright-report/
+.supabase/
+supabase/.temp/
+supabase/.branches/
+*.tsbuildinfo

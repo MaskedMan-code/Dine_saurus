@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../lib/supabase';
 import { useRestaurant } from '../../context/RestaurantContext';
 import {
   Award,
@@ -16,68 +18,57 @@ import {
 } from 'lucide-react';
 
 export const LoyaltyAdminView: React.FC = () => {
-  const { restaurant, customerProfile } = useRestaurant();
+  const { restaurant, orders } = useRestaurant();
+  const { staff } = useAuth();
+  const orgId = staff?.organizationId;
+  const [rows, setRows] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!orgId) return;
+    const controller = new AbortController();
+    void supabase
+      .from('customers')
+      .select(
+        'id,name,phone,phone_verified,points_balance,stamps_count,stamps_required,tier,created_at',
+      )
+      .eq('organization_id', orgId)
+      .order('created_at', { ascending: false })
+      .abortSignal(controller.signal)
+      .then(({ data, error }) => {
+        if (!controller.signal.aborted) {
+          if (error) setError(error.message);
+          else setRows(data ?? []);
+        }
+      });
+    return () => controller.abort();
+  }, [orgId, orders.length]);
   const [searchMember, setSearchMember] = useState<string>('');
 
-  // Sample member roster for CRM
-  const members = [
-    {
-      id: 'cust_01',
-      name: customerProfile.name,
-      phone: customerProfile.phone,
-      email: customerProfile.email,
-      points: customerProfile.pointsBalance,
-      stamps: customerProfile.stampsCount,
-      tier: customerProfile.tier,
-      joined: '12 Jan 2024',
-      totalSpent: '$482.50',
-      visits: 9,
-    },
-    {
-      id: 'cust_02',
-      name: 'Freja Lindqvist',
-      phone: '+46 70 891 2345',
-      email: 'freja.lind@nordicmail.com',
-      points: 1240,
-      stamps: 6,
-      tier: 'Platinum',
-      joined: '04 Nov 2023',
-      totalSpent: '$1,290.00',
-      visits: 24,
-    },
-    {
-      id: 'cust_03',
-      name: 'Henrik Vang',
-      phone: '+47 912 34 567',
-      email: 'henrik.vang@oslofjord.no',
-      points: 380,
-      stamps: 2,
-      tier: 'Silver',
-      joined: '18 Feb 2024',
-      totalSpent: '$195.00',
-      visits: 3,
-    },
-    {
-      id: 'cust_04',
-      name: 'Astrid Olsen',
-      phone: '+45 20 12 34 56',
-      email: 'astrid.olsen@cphdesign.dk',
-      points: 820,
-      stamps: 5,
-      tier: 'Gold',
-      joined: '02 Jan 2024',
-      totalSpent: '$640.00',
-      visits: 12,
-    },
-  ];
+  const members = rows.map((row) => {
+    const visibleOrders = orders.filter(
+      (order) => order.customerId === row.id && order.status !== 'cancelled',
+    );
+    return {
+      id: row.id,
+      name: row.name,
+      phone: row.phone ?? '',
+      email: row.phone_verified ? 'Verified contact' : 'Unverified contact',
+      points: row.points_balance,
+      stamps: row.stamps_count,
+      stampsRequired: row.stamps_required,
+      tier: row.tier,
+      totalSpent:
+        (restaurant?.currencySymbol ?? '') +
+        visibleOrders.reduce((sum, order) => sum + order.totalAmount, 0).toFixed(2),
+      visits: visibleOrders.length,
+    };
+  });
 
-  const filteredMembers = members.filter(m => {
+  const filteredMembers = members.filter((m) => {
     if (searchMember.trim()) {
       const q = searchMember.toLowerCase();
       return (
-        m.name.toLowerCase().includes(q) ||
-        m.phone.includes(q) ||
-        m.email.toLowerCase().includes(q)
+        m.name.toLowerCase().includes(q) || m.phone.includes(q) || m.email.toLowerCase().includes(q)
       );
     }
     return true;
@@ -85,6 +76,15 @@ export const LoyaltyAdminView: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      {error && (
+        <p role="alert" className="p-3 bg-red-50 text-red-700">
+          {error}
+        </p>
+      )}
+      <p className="text-sm text-slate-500">
+        Guest visits use unverified contact details. Matching phone numbers do not prove identity.
+        Spend reflects orders visible at this location.
+      </p>
       {/* Top Header Card */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
@@ -93,12 +93,18 @@ export const LoyaltyAdminView: React.FC = () => {
           </div>
           <div>
             <h2 className="font-semibold text-lg text-slate-900">Loyalty, Rewards & Guest CRM</h2>
-            <p className="text-xs text-slate-500">Member digital stamp cards, tier perks, point balances, and automated retention</p>
+            <p className="text-xs text-slate-500">
+              Member digital stamp cards, tier perks, point balances, and automated retention
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium text-xs shadow-sm cursor-pointer">
+          <button
+            disabled
+            title="Reward creation requires server setup"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition font-medium text-xs shadow-sm cursor-pointer"
+          >
             <Plus className="w-4 h-4" />
             <span>Create Promo Reward</span>
           </button>
@@ -109,26 +115,28 @@ export const LoyaltyAdminView: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span className="text-xs font-medium text-slate-500">Active Loyalty Members</span>
-          <p className="text-2xl font-bold text-slate-900 mt-1">1,482</p>
-          <p className="text-[11px] text-emerald-600 font-medium mt-0.5">+42 joined this week</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{rows.length}</p>
+          <p className="text-[11px] text-emerald-600 font-medium mt-0.5">Customer visit records</p>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span className="text-xs font-medium text-slate-500">Reward Redemption Rate</span>
-          <p className="text-2xl font-bold text-slate-900 mt-1">68.4%</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">High repeat engagement</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">Not configured</p>
+          <p className="text-[11px] text-slate-400 mt-0.5">Ask staff about rewards</p>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span className="text-xs font-medium text-slate-500">Points in Circulation</span>
-          <p className="text-2xl font-bold text-slate-900 mt-1">142,500 pts</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">100 pts = $1.00 credit</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">
+            {rows.reduce((sum, row) => sum + row.points_balance, 0)} pts
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">Recorded customer points</p>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span className="text-xs font-medium text-slate-500">Stamp Card Goal</span>
-          <p className="text-2xl font-bold text-slate-900 mt-1">6 Stamps</p>
-          <p className="text-[11px] text-indigo-600 font-medium mt-0.5">Free Pastry or Drink</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">Per customer</p>
+          <p className="text-[11px] text-indigo-600 font-medium mt-0.5">See recorded stamp goals</p>
         </div>
       </div>
 
@@ -141,37 +149,10 @@ export const LoyaltyAdminView: React.FC = () => {
             <span>Configured Loyalty Rewards</span>
           </h3>
 
-          <div className="space-y-3">
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-xs text-slate-900">Complimentary Cloudberry Mocktail</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  250 pts
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">Available across all dine-in QR orders</p>
-            </div>
-
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-xs text-slate-900">15% Off Total Dining Bill</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  500 pts
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">Applies instantly at QR table checkout</p>
-            </div>
-
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-xs text-slate-900">Free Chef Special Tasting Plate</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                  800 pts
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500">VIP culinary experience reward</p>
-            </div>
-          </div>
+          <p className="text-xs text-slate-500">
+            Reward redemption requires verified ownership and a server-side redemption workflow.
+            Contact the restaurant administrator to configure it.
+          </p>
         </div>
 
         {/* Member Directory */}
@@ -188,7 +169,7 @@ export const LoyaltyAdminView: React.FC = () => {
                 type="text"
                 placeholder="Search member by name/phone..."
                 value={searchMember}
-                onChange={e => setSearchMember(e.target.value)}
+                onChange={(e) => setSearchMember(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-slate-50"
               />
             </div>
@@ -202,16 +183,18 @@ export const LoyaltyAdminView: React.FC = () => {
                   <th className="py-2.5 px-3">Tier</th>
                   <th className="py-2.5 px-3">Points</th>
                   <th className="py-2.5 px-3">Stamps</th>
-                  <th className="py-2.5 px-3">Lifetime Spend</th>
+                  <th className="py-2.5 px-3">Visible order value</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredMembers.map(m => (
+                {filteredMembers.map((m) => (
                   <tr key={m.id} className="hover:bg-slate-50/70">
                     <td className="py-3 px-3">
                       <div>
                         <span className="font-semibold text-slate-900">{m.name}</span>
-                        <p className="text-[11px] text-slate-400">{m.email} • {m.phone}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {m.email} • {m.phone}
+                        </p>
                       </div>
                     </td>
                     <td className="py-3 px-3">
@@ -219,11 +202,11 @@ export const LoyaltyAdminView: React.FC = () => {
                         {m.tier}
                       </span>
                     </td>
-                    <td className="py-3 px-3 font-semibold text-slate-900">
-                      {m.points} pts
-                    </td>
+                    <td className="py-3 px-3 font-semibold text-slate-900">{m.points} pts</td>
                     <td className="py-3 px-3">
-                      <span className="font-medium text-slate-700">{m.stamps}/6 stamps</span>
+                      <span className="font-medium text-slate-700">
+                        {m.stamps}/{m.stampsRequired} stamps
+                      </span>
                     </td>
                     <td className="py-3 px-3 font-medium text-slate-900">
                       {m.totalSpent} ({m.visits} visits)

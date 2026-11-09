@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { MENU_IMAGE_PLACEHOLDER } from '../../lib/placeholder';
+import React, { useRef, useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { MenuItem, RestaurantTable } from '../../types';
 import {
@@ -21,15 +22,25 @@ import {
 } from 'lucide-react';
 
 export const POSView: React.FC = () => {
-  const {
-    restaurant,
-    categories,
-    menuItems,
-    tables,
-    activeTable,
-    setActiveTable,
-    createOrder,
-  } = useRestaurant();
+  const { restaurant, categories, menuItems, tables, activeTable, setActiveTable, createOrder } =
+    useRestaurant();
+
+  const [posCategory, setPosCategory] = useState<string>('cat_popular');
+  const [posSearch, setPosSearch] = useState<string>('');
+  const [selectedTableId, setSelectedTableId] = useState<string>(
+    activeTable?.id || tables[0]?.id || '',
+  );
+  const [guestName, setGuestName] = useState<string>('Walk-in Diner');
+  const [posItems, setPosItems] = useState<{ item: MenuItem; quantity: number }[]>([]);
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [splitCount, setSplitCount] = useState<number>(1);
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState<boolean>(false);
+  const [guestPhone, setGuestPhone] = useState('');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
+  const orderIntent = useRef(crypto.randomUUID());
+  const [lastOrderNum, setLastOrderNum] = useState<string>('');
 
   if (!restaurant) {
     return (
@@ -39,19 +50,9 @@ export const POSView: React.FC = () => {
     );
   }
 
-  const [posCategory, setPosCategory] = useState<string>('cat_popular');
-  const [posSearch, setPosSearch] = useState<string>('');
-  const [selectedTableId, setSelectedTableId] = useState<string>(activeTable?.id || tables[0]?.id || '');
-  const [guestName, setGuestName] = useState<string>('Walk-in Diner');
-  const [posItems, setPosItems] = useState<{ item: MenuItem; quantity: number }[]>([]);
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
-  const [splitCount, setSplitCount] = useState<number>(1);
-  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState<boolean>(false);
-  const [lastOrderNum, setLastOrderNum] = useState<string>('');
+  const currentTable = tables.find((t) => t.id === selectedTableId);
 
-  const currentTable = tables.find(t => t.id === selectedTableId);
-
-  const filteredMenuItems = menuItems.filter(item => {
+  const filteredMenuItems = menuItems.filter((item) => {
     if (posSearch.trim()) {
       const q = posSearch.toLowerCase();
       return item.name.toLowerCase().includes(q) || item.description.toLowerCase().includes(q);
@@ -61,9 +62,9 @@ export const POSView: React.FC = () => {
   });
 
   const addItemToPOS = (item: MenuItem) => {
-    if (item.isSoldOut) return;
-    setPosItems(prev => {
-      const idx = prev.findIndex(p => p.item.id === item.id);
+    if (item.isSoldOut || submitLock.current) return;
+    setPosItems((prev) => {
+      const idx = prev.findIndex((p) => p.item.id === item.id);
       if (idx >= 0) {
         const next = [...prev];
         next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
@@ -74,48 +75,88 @@ export const POSView: React.FC = () => {
   };
 
   const updateQuantity = (itemId: string, delta: number) => {
-    setPosItems(prev =>
+    if (submitLock.current) return;
+    setPosItems((prev) =>
       prev
-        .map(p => {
+        .map((p) => {
           if (p.item.id === itemId) {
             const newQty = p.quantity + delta;
             return newQty > 0 ? { ...p, quantity: newQty } : null;
           }
           return p;
         })
-        .filter((p): p is { item: MenuItem; quantity: number } => p !== null)
+        .filter((p): p is { item: MenuItem; quantity: number } => p !== null),
     );
   };
 
   const removeItem = (itemId: string) => {
-    setPosItems(prev => prev.filter(p => p.item.id !== itemId));
+    if (submitLock.current) return;
+    setPosItems((prev) => prev.filter((p) => p.item.id !== itemId));
   };
 
   const rawSubtotal = posItems.reduce((sum, p) => sum + p.item.price * p.quantity, 0);
   const discountAmount = Number(((rawSubtotal * discountPercent) / 100).toFixed(2));
   const discountedSubtotal = rawSubtotal - discountAmount;
   const taxAmount = Number(((discountedSubtotal * restaurant.taxRatePercent) / 100).toFixed(2));
-  const serviceCharge = Number(((discountedSubtotal * restaurant.serviceChargePercent) / 100).toFixed(2));
+  const serviceCharge = Number(
+    ((discountedSubtotal * restaurant.serviceChargePercent) / 100).toFixed(2),
+  );
   const grandTotal = Number((discountedSubtotal + taxAmount + serviceCharge).toFixed(2));
   const perPersonSplit = Number((grandTotal / splitCount).toFixed(2));
 
   const handleSendOrder = async (paymentMethod: 'card' | 'cash') => {
-    if (posItems.length === 0) return;
-
-    const order = await createOrder({
-      orderMode: 'dine_in',
-      customerName: guestName,
-      paymentMethod,
-    });
-
-    setLastOrderNum(order.orderNumber);
-    setIsSuccessModalOpen(true);
-    setPosItems([]);
-    setDiscountPercent(0);
+    if (!posItems.length || submitLock.current) return;
+    submitLock.current = true;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      if (discountPercent !== 0) throw new Error('Discounts are not enabled for QR orders.');
+      const order = await createOrder({
+        orderMode: 'dine_in',
+        customerName: guestName,
+        customerPhone: guestPhone,
+        paymentMethod,
+        tableId: selectedTableId,
+        items: posItems.map((p) => ({
+          id: `${orderIntent.current}:${p.item.id}`,
+          menuItem: p.item,
+          quantity: p.quantity,
+          selectedModifiers: [],
+          unitPrice: p.item.price,
+          totalPrice: p.item.price * p.quantity,
+        })),
+      });
+      setLastOrderNum(order.orderNumber);
+      setIsSuccessModalOpen(true);
+      setPosItems([]);
+      setDiscountPercent(0);
+      orderIntent.current = crypto.randomUUID();
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : 'Could not confirm this order. Please retry.',
+      );
+    } finally {
+      submitLock.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6">
+      {submitError && (
+        <p role="alert" className="p-3 bg-red-50 text-red-700">
+          {submitError}
+        </p>
+      )}
+      <label className="block text-sm mb-3">
+        Diner mobile (required)
+        <input
+          type="tel"
+          value={guestPhone}
+          onChange={(e) => setGuestPhone(e.target.value)}
+          className="ml-3 p-2 border rounded-lg"
+        />
+      </label>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left 7 Columns: Categories & Quick Food Grid */}
         <div className="lg:col-span-7 space-y-4">
@@ -126,7 +167,7 @@ export const POSView: React.FC = () => {
               <input
                 type="text"
                 value={posSearch}
-                onChange={e => setPosSearch(e.target.value)}
+                onChange={(e) => setPosSearch(e.target.value)}
                 placeholder="Search food by code or keyword..."
                 className="w-full pl-10 pr-4 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500"
               />
@@ -135,10 +176,10 @@ export const POSView: React.FC = () => {
               <span className="text-xs text-slate-500 font-semibold whitespace-nowrap">Table:</span>
               <select
                 value={selectedTableId}
-                onChange={e => setSelectedTableId(e.target.value)}
+                onChange={(e) => setSelectedTableId(e.target.value)}
                 className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 focus:outline-none w-full sm:w-40 cursor-pointer"
               >
-                {tables.map(t => (
+                {tables.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name} ({t.capacity} Seats - {t.status})
                   </option>
@@ -149,7 +190,7 @@ export const POSView: React.FC = () => {
 
           {/* Categories Horizontal */}
           <div className="flex overflow-x-auto no-scrollbar gap-2 pb-1">
-            {categories.map(cat => (
+            {categories.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setPosCategory(cat.id)}
@@ -166,7 +207,7 @@ export const POSView: React.FC = () => {
 
           {/* Grid of Dishes */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
-            {filteredMenuItems.map(item => (
+            {filteredMenuItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -179,7 +220,15 @@ export const POSView: React.FC = () => {
                 }`}
               >
                 <div className="relative h-24 w-full rounded-lg overflow-hidden mb-2 bg-slate-100">
-                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                  <img
+                    src={item.imageUrl || MENU_IMAGE_PLACEHOLDER}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = MENU_IMAGE_PLACEHOLDER;
+                    }}
+                    alt={item.name}
+                    className="w-full h-full object-cover"
+                  />
                   {item.isSoldOut && (
                     <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
                       <span className="text-[10px] uppercase font-bold text-white px-2 py-0.5 rounded bg-slate-900/80">
@@ -235,7 +284,7 @@ export const POSView: React.FC = () => {
             <input
               type="text"
               value={guestName}
-              onChange={e => setGuestName(e.target.value)}
+              onChange={(e) => setGuestName(e.target.value)}
               placeholder="Guest name (e.g. John Doe)"
               className="w-full text-xs bg-transparent focus:outline-none text-slate-900 font-medium"
             />
@@ -250,8 +299,11 @@ export const POSView: React.FC = () => {
                 <p className="text-[11px]">Click items from the catalog on the left to add.</p>
               </div>
             ) : (
-              posItems.map(p => (
-                <div key={p.item.id} className="pt-2 first:pt-0 flex items-center justify-between gap-2 text-xs">
+              posItems.map((p) => (
+                <div
+                  key={p.item.id}
+                  className="pt-2 first:pt-0 flex items-center justify-between gap-2 text-xs"
+                >
                   <div className="flex-grow">
                     <h5 className="font-bold text-slate-900">{p.item.name}</h5>
                     <p className="text-slate-500">
@@ -301,8 +353,10 @@ export const POSView: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-500 text-[11px]">Discount:</span>
                 <select
+                  disabled
+                  title="Server discounts are not configured"
                   value={discountPercent}
-                  onChange={e => setDiscountPercent(Number(e.target.value))}
+                  onChange={(e) => setDiscountPercent(Number(e.target.value))}
                   className="bg-white border border-slate-200 p-1 rounded-md text-xs font-semibold focus:outline-none cursor-pointer"
                 >
                   <option value={0}>0%</option>
@@ -318,7 +372,7 @@ export const POSView: React.FC = () => {
                 <span className="text-slate-500 text-[11px]">Split:</span>
                 <select
                   value={splitCount}
-                  onChange={e => setSplitCount(Number(e.target.value))}
+                  onChange={(e) => setSplitCount(Number(e.target.value))}
                   className="bg-white border border-slate-200 p-1 rounded-md text-xs font-semibold focus:outline-none cursor-pointer"
                 >
                   <option value={1}>1 Way</option>
@@ -383,27 +437,27 @@ export const POSView: React.FC = () => {
           <div className="p-4 bg-white border-t border-slate-200 space-y-2">
             <div className="grid grid-cols-2 gap-2">
               <button
-                disabled={posItems.length === 0}
+                disabled={posItems.length === 0 || submitting}
                 onClick={() => handleSendOrder('card')}
                 className="py-2.5 px-4 rounded-lg bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <CreditCard className="w-4 h-4" />
-                <span>Pay Card</span>
+                <span>Order ? card at restaurant</span>
               </button>
 
               <button
-                disabled={posItems.length === 0}
+                disabled={posItems.length === 0 || submitting}
                 onClick={() => handleSendOrder('cash')}
                 className="py-2.5 px-4 rounded-lg bg-slate-900 text-white font-semibold text-xs hover:bg-slate-800 disabled:opacity-50 transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <Banknote className="w-4 h-4" />
-                <span>Pay Cash</span>
+                <span>Order ? cash at restaurant</span>
               </button>
             </div>
 
             <button
               onClick={() => window.print()}
-              disabled={posItems.length === 0}
+              disabled={posItems.length === 0 || submitting}
               className="w-full py-2 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 text-xs font-semibold hover:bg-slate-100 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <Printer className="w-3.5 h-3.5" />
@@ -420,7 +474,9 @@ export const POSView: React.FC = () => {
             <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto shadow-sm">
               <Sparkles className="w-6 h-6" />
             </div>
-            <h3 className="font-bold text-base text-slate-900">Order {lastOrderNum} Transmitted!</h3>
+            <h3 className="font-bold text-base text-slate-900">
+              Order {lastOrderNum} Transmitted!
+            </h3>
             <p className="text-xs text-slate-500">
               Ticket sent directly to Kitchen Display System and table marked occupied.
             </p>

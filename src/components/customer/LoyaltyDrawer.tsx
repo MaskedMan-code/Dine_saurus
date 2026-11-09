@@ -21,6 +21,21 @@ export const LoyaltyDrawer: React.FC<Props> = ({ isOpen, onClose }) => {
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+  if (!customerProfile.id)
+    return (
+      <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-6 max-w-sm space-y-4">
+          <h2 className="font-bold text-[#16342b]">Loyalty rewards</h2>
+          <p className="text-sm">
+            Your guest order does not verify loyalty ownership. Please ask restaurant staff about
+            rewards.
+          </p>
+          <button onClick={onClose} className="p-3 bg-[#16342b] text-white rounded-xl">
+            Close
+          </button>
+        </div>
+      </div>
+    );
 
   return (
     <div
@@ -28,7 +43,7 @@ export const LoyaltyDrawer: React.FC<Props> = ({ isOpen, onClose }) => {
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-150"
     >
       <div
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         className="bg-[#fcfcfb] w-full max-w-md rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-[#ebebe8] animate-in zoom-in-95 duration-150"
       >
         {/* Header */}
@@ -72,7 +87,9 @@ export const LoyaltyDrawer: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="flex justify-between items-center mb-3">
               <div>
                 <h4 className="font-bold text-sm text-[#16342b]">Dining Passport</h4>
-                <p className="text-xs text-[#70706b]">Collect 6 stamps to unlock €25 dining voucher</p>
+                <p className="text-xs text-[#70706b]">
+                  Collect 6 stamps to unlock €25 dining voucher
+                </p>
               </div>
               <span className="text-xs font-bold px-2.5 py-0.5 bg-[#c8eadc] text-[#16342b] rounded-full">
                 {customerProfile.stampsCount} / 6
@@ -81,7 +98,7 @@ export const LoyaltyDrawer: React.FC<Props> = ({ isOpen, onClose }) => {
 
             {/* Stamp Circles */}
             <div className="grid grid-cols-6 gap-2">
-              {[0, 1, 2, 3, 4, 5].map(idx => {
+              {[0, 1, 2, 3, 4, 5].map((idx) => {
                 const isStamped = idx < customerProfile.stampsCount;
                 const isFinalReward = idx === 5;
 
@@ -92,8 +109,8 @@ export const LoyaltyDrawer: React.FC<Props> = ({ isOpen, onClose }) => {
                       isStamped
                         ? 'bg-[#16342b] border-[#16342b] text-white shadow-sm'
                         : isFinalReward
-                        ? 'bg-[#fcfcfb] border-dashed border-[#8d4e2d] text-[#8d4e2d]'
-                        : 'bg-[#fcfcfb] border-[#ebebe8] text-[#70706b]'
+                          ? 'bg-[#fcfcfb] border-dashed border-[#8d4e2d] text-[#8d4e2d]'
+                          : 'bg-[#fcfcfb] border-[#ebebe8] text-[#70706b]'
                     }`}
                   >
                     {isStamped ? (
@@ -116,7 +133,7 @@ export const LoyaltyDrawer: React.FC<Props> = ({ isOpen, onClose }) => {
             </h4>
 
             <div className="space-y-3">
-              {customerProfile.savedRewards.map(reward => {
+              {customerProfile.savedRewards.map((reward) => {
                 const canAfford = customerProfile.pointsBalance >= reward.pointsCost;
 
                 return (

@@ -1,3 +1,4 @@
+import { MENU_IMAGE_PLACEHOLDER } from '../../lib/placeholder';
 import React, { useState, useEffect } from 'react';
 import { MenuItem, SelectedModifier } from '../../types';
 import { X, Plus, Minus, Check, Flame } from 'lucide-react';
@@ -10,16 +11,11 @@ interface Props {
     item: MenuItem,
     quantity: number,
     modifiers: SelectedModifier[],
-    notes?: string
+    notes?: string,
   ) => void;
 }
 
-export const ItemCustomizerModal: React.FC<Props> = ({
-  item,
-  currency,
-  onClose,
-  onAddToCart,
-}) => {
+export const ItemCustomizerModal: React.FC<Props> = ({ item, currency, onClose, onAddToCart }) => {
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -35,8 +31,8 @@ export const ItemCustomizerModal: React.FC<Props> = ({
   const [selectedModifiers, setSelectedModifiers] = useState<SelectedModifier[]>(() => {
     if (!item) return [];
     const defaults: SelectedModifier[] = [];
-    item.modifierGroups?.forEach(group => {
-      group.options.forEach(opt => {
+    item.modifierGroups?.forEach((group) => {
+      group.options.forEach((opt) => {
         if (opt.isDefault) {
           defaults.push({
             groupId: group.id,
@@ -52,20 +48,39 @@ export const ItemCustomizerModal: React.FC<Props> = ({
   });
   const [specialInstructions, setSpecialInstructions] = useState<string>('');
 
+  useEffect(() => {
+    setQuantity(1);
+    setSpecialInstructions('');
+    setSelectedModifiers(
+      (item?.modifierGroups ?? []).flatMap((group) =>
+        group.options
+          .filter((option) => option.isDefault)
+          .map((option) => ({
+            groupId: group.id,
+            groupName: group.name,
+            optionId: option.id,
+            optionName: option.name,
+            priceDelta: option.priceDelta,
+          })),
+      ),
+    );
+  }, [item]);
   if (!item) return null;
 
   const handleToggleModifier = (
     group: NonNullable<MenuItem['modifierGroups']>[0],
-    option: NonNullable<MenuItem['modifierGroups']>[0]['options'][0]
+    option: NonNullable<MenuItem['modifierGroups']>[0]['options'][0],
   ) => {
     const isSingleChoice = group.maxSelections === 1;
 
-    setSelectedModifiers(prev => {
-      const isAlreadySelected = prev.some(m => m.groupId === group.id && m.optionId === option.id);
+    setSelectedModifiers((prev) => {
+      const isAlreadySelected = prev.some(
+        (m) => m.groupId === group.id && m.optionId === option.id,
+      );
 
       if (isSingleChoice) {
         // Replace selection in this group
-        const withoutGroup = prev.filter(m => m.groupId !== group.id);
+        const withoutGroup = prev.filter((m) => m.groupId !== group.id);
         return [
           ...withoutGroup,
           {
@@ -79,10 +94,10 @@ export const ItemCustomizerModal: React.FC<Props> = ({
       } else {
         // Multiple choice toggle
         if (isAlreadySelected) {
-          return prev.filter(m => !(m.groupId === group.id && m.optionId === option.id));
+          return prev.filter((m) => !(m.groupId === group.id && m.optionId === option.id));
         } else {
           // Check max limit
-          const countInGroup = prev.filter(m => m.groupId === group.id).length;
+          const countInGroup = prev.filter((m) => m.groupId === group.id).length;
           if (group.maxSelections && countInGroup >= group.maxSelections) {
             return prev;
           }
@@ -105,7 +120,15 @@ export const ItemCustomizerModal: React.FC<Props> = ({
   const unitPrice = item.price + modifierTotal;
   const totalPrice = unitPrice * quantity;
 
+  const validSelection = (item.modifierGroups ?? []).every((group) => {
+    const count = selectedModifiers.filter((m) => m.groupId === group.id).length;
+    return (
+      count >= Math.max(group.minSelections, group.required ? 1 : 0) &&
+      (!group.maxSelections || count <= group.maxSelections)
+    );
+  });
   const handleAdd = () => {
+    if (!validSelection) return;
     onAddToCart(item, quantity, selectedModifiers, specialInstructions.trim() || undefined);
     onClose();
   };
@@ -116,12 +139,20 @@ export const ItemCustomizerModal: React.FC<Props> = ({
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in duration-150"
     >
       <div
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         className="bg-[#fcfcfb] w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-[#ebebe8] animate-in zoom-in-95 duration-150"
       >
         {/* Header Image & Close */}
         <div className="relative h-56 w-full bg-[#eeeeec] flex-shrink-0">
-          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+          <img
+            src={item.imageUrl || MENU_IMAGE_PLACEHOLDER}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = MENU_IMAGE_PLACEHOLDER;
+            }}
+            alt={item.name}
+            className="w-full h-full object-cover"
+          />
           <button
             onClick={onClose}
             className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 text-[#242424] flex items-center justify-center shadow-md hover:bg-white transition-colors cursor-pointer"
@@ -158,11 +189,14 @@ export const ItemCustomizerModal: React.FC<Props> = ({
           {/* Modifier Groups */}
           {item.modifierGroups && item.modifierGroups.length > 0 && (
             <div className="space-y-4">
-              {item.modifierGroups.map(group => {
+              {item.modifierGroups.map((group) => {
                 const isSingleChoice = group.maxSelections === 1;
 
                 return (
-                  <div key={group.id} className="bg-[#f4f4f2] p-4 rounded-xl border border-[#ebebe8] space-y-3">
+                  <div
+                    key={group.id}
+                    className="bg-[#f4f4f2] p-4 rounded-xl border border-[#ebebe8] space-y-3"
+                  >
                     <div className="flex justify-between items-center">
                       <div>
                         <h4 className="font-semibold text-xs text-[#16342b]">{group.name}</h4>
@@ -180,9 +214,9 @@ export const ItemCustomizerModal: React.FC<Props> = ({
                     </div>
 
                     <div className="space-y-2">
-                      {group.options.map(opt => {
+                      {group.options.map((opt) => {
                         const isSelected = selectedModifiers.some(
-                          m => m.groupId === group.id && m.optionId === opt.id
+                          (m) => m.groupId === group.id && m.optionId === opt.id,
                         );
 
                         return (
@@ -211,7 +245,9 @@ export const ItemCustomizerModal: React.FC<Props> = ({
                               <span>{opt.name}</span>
                             </div>
                             <span className="font-medium text-[#70706b]">
-                              {opt.priceDelta > 0 ? `+${currency}${opt.priceDelta.toFixed(2)}` : 'Included'}
+                              {opt.priceDelta > 0
+                                ? `+${currency}${opt.priceDelta.toFixed(2)}`
+                                : 'Included'}
                             </span>
                           </button>
                         );
@@ -225,11 +261,13 @@ export const ItemCustomizerModal: React.FC<Props> = ({
 
           {/* Special Instructions Note */}
           <div className="space-y-2">
-            <label className="block text-xs font-semibold text-[#16342b]">Special Kitchen Notes</label>
+            <label className="block text-xs font-semibold text-[#16342b]">
+              Special Kitchen Notes
+            </label>
             <textarea
               rows={2}
               value={specialInstructions}
-              onChange={e => setSpecialInstructions(e.target.value)}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
               placeholder="e.g. Extra dressing on the side, no onions please..."
               className="w-full p-3 rounded-xl bg-[#f4f4f2] border border-[#ebebe8] text-xs text-[#242424] focus:outline-none focus:bg-[#fcfcfb] focus:border-[#16342b]"
             />
@@ -257,10 +295,11 @@ export const ItemCustomizerModal: React.FC<Props> = ({
 
           {/* Add to Cart Button */}
           <button
+            disabled={!validSelection}
             onClick={handleAdd}
             className="flex-grow bg-[#16342b] text-white py-3.5 px-4 rounded-xl font-semibold text-xs uppercase tracking-wider hover:bg-[#2d4b41] transition-all shadow-sm flex items-center justify-between cursor-pointer"
           >
-            <span>Add to Order</span>
+            <span>{validSelection ? 'Add to Order' : 'Choose required options'}</span>
             <span>
               {currency}
               {totalPrice.toFixed(2)}

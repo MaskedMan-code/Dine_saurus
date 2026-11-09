@@ -1,22 +1,35 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { checkSupabaseConnection, ConnectionStatus } from './supabase';
-
 export function useSupabaseConnection() {
-  const [status, setStatus] = useState<ConnectionStatus>({ connected: false, message: 'Checking Supabase connection…' });
+  const [status, setStatus] = useState<ConnectionStatus>({
+    connected: false,
+    message: 'Checking Supabase connection?',
+  });
   const [checking, setChecking] = useState(true);
-
+  const mounted = useRef(false);
+  const running = useRef(false);
   const check = useCallback(async () => {
-    setChecking(true);
-    const result = await checkSupabaseConnection();
-    setStatus(result);
-    setChecking(false);
+    if (running.current) return;
+    running.current = true;
+    if (mounted.current) setChecking(true);
+    try {
+      const result = await checkSupabaseConnection();
+      if (mounted.current) setStatus(result);
+    } finally {
+      running.current = false;
+      if (mounted.current) setChecking(false);
+    }
   }, []);
-
   useEffect(() => {
-    check();
-    const interval = setInterval(check, 60000); // periodic re-check so a dropped connection is reported, not just assumed fine
-    return () => clearInterval(interval);
+    mounted.current = true;
+    void check();
+    const interval = setInterval(() => {
+      if (!document.hidden) void check();
+    }, 60000);
+    return () => {
+      mounted.current = false;
+      clearInterval(interval);
+    };
   }, [check]);
-
   return { ...status, checking, recheck: check };
 }

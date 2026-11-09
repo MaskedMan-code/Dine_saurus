@@ -31,14 +31,46 @@ export const OrderTrackerModal: React.FC<Props> = ({
   if (!isOpen || !order) return null;
 
   const steps: { key: OrderStatus; label: string; description: string; icon: React.ReactNode }[] = [
-    { key: 'pending', label: 'Order Received', description: 'Transmitted to kitchen terminal', icon: <CheckCircle2 className="w-4 h-4" /> },
-    { key: 'accepted', label: 'Kitchen Accepted', description: 'Head chef queued ticket', icon: <ChefHat className="w-4 h-4" /> },
-    { key: 'preparing', label: 'Cooking & Crafting', description: 'Freshly preparing your dishes', icon: <Clock className="w-4 h-4" /> },
-    { key: 'ready', label: 'Plated & Ready', description: 'Expedited for table service', icon: <Bell className="w-4 h-4" /> },
-    { key: 'served', label: 'Served to Table', description: 'Bon appétit!', icon: <Utensils className="w-4 h-4" /> },
+    {
+      key: 'pending',
+      label: 'Order Received',
+      description: 'Transmitted to kitchen terminal',
+      icon: <CheckCircle2 className="w-4 h-4" />,
+    },
+    {
+      key: 'accepted',
+      label: 'Kitchen Accepted',
+      description: 'Head chef queued ticket',
+      icon: <ChefHat className="w-4 h-4" />,
+    },
+    {
+      key: 'preparing',
+      label: 'Cooking & Crafting',
+      description: 'Freshly preparing your dishes',
+      icon: <Clock className="w-4 h-4" />,
+    },
+    {
+      key: 'ready',
+      label: 'Plated & Ready',
+      description: 'Expedited for table service',
+      icon: <Bell className="w-4 h-4" />,
+    },
+    {
+      key: 'served',
+      label: 'Served to Table',
+      description: 'Bon appétit!',
+      icon: <Utensils className="w-4 h-4" />,
+    },
   ];
 
-  const statusOrder: OrderStatus[] = ['pending', 'accepted', 'preparing', 'ready', 'served', 'completed'];
+  const statusOrder: OrderStatus[] = [
+    'pending',
+    'accepted',
+    'preparing',
+    'ready',
+    'served',
+    'completed',
+  ];
   const currentIndex = statusOrder.indexOf(order.status);
 
   return (
@@ -47,7 +79,7 @@ export const OrderTrackerModal: React.FC<Props> = ({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
     >
       <div
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         className="bg-[#fcfcfb] w-full max-w-md rounded-2xl overflow-hidden shadow-2xl border border-[#ebebe8] flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-150"
       >
         {/* Header */}
@@ -63,17 +95,19 @@ export const OrderTrackerModal: React.FC<Props> = ({
             <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full bg-[#2d4b41] text-[#99baad] border border-[#3e6357]">
               Live Tracker
             </span>
-            <span className="text-xs text-[#99baad]">Realtime Sync</span>
+            <span className="text-xs text-[#99baad]">Updates every few seconds</span>
           </div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Order {order.orderNumber}</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-white">
+            Order {order.orderNumber}
+          </h2>
           <div className="flex items-center gap-2 text-xs text-[#c8eadc] mt-1">
             <MapPin className="w-3.5 h-3.5 text-[#fdaa83]" />
             <span>
               {order.orderMode === 'dine_in'
-                ? `Table ${order.tableNumber || '12'} (${order.areaName || 'Outdoor Terrace'})`
+                ? `Table ${order.tableNumber || '?'} (${order.areaName || 'Table service'})`
                 : order.orderMode === 'car_delivery'
-                ? `Car Delivery (${order.carDeliveryDetails?.vehicleModel || 'Vehicle'})`
-                : 'Takeaway Counter'}
+                  ? `Car Delivery (${order.carDeliveryDetails?.vehicleModel || 'Vehicle'})`
+                  : 'Takeaway Counter'}
             </span>
           </div>
         </div>
@@ -88,8 +122,12 @@ export const OrderTrackerModal: React.FC<Props> = ({
                 {order.status === 'completed' || order.status === 'served'
                   ? 'Completed ✨'
                   : order.status === 'ready'
-                  ? 'Ready for You!'
-                  : '10 - 15 mins'}
+                    ? 'Ready for You!'
+                    : order.status === 'cancelled'
+                      ? 'Cancelled'
+                      : order.estimatedReadyMinutes
+                        ? `${order.estimatedReadyMinutes} min (restaurant estimate)`
+                        : 'Awaiting kitchen estimate'}
               </p>
             </div>
             <div className="w-10 h-10 rounded-xl bg-[#e8e8e6] text-[#16342b] flex items-center justify-center shadow-sm">
@@ -112,8 +150,8 @@ export const OrderTrackerModal: React.FC<Props> = ({
                       isCurrent
                         ? 'bg-[#16342b] text-white ring-4 ring-[#16342b]/15'
                         : isPastOrCurrent
-                        ? 'bg-[#2d4b41] text-white'
-                        : 'bg-[#fcfcfb] border-2 border-[#ebebe8] text-[#70706b]'
+                          ? 'bg-[#2d4b41] text-white'
+                          : 'bg-[#fcfcfb] border-2 border-[#ebebe8] text-[#70706b]'
                     }`}
                   >
                     {step.icon}
@@ -143,9 +181,11 @@ export const OrderTrackerModal: React.FC<Props> = ({
 
           {/* Ordered Items Summary */}
           <div className="bg-[#f4f4f2] p-4 rounded-xl border border-[#ebebe8] space-y-2">
-            <h4 className="font-semibold text-xs text-[#70706b] uppercase tracking-wider">Dishes in this Ticket</h4>
+            <h4 className="font-semibold text-xs text-[#70706b] uppercase tracking-wider">
+              Dishes in this Ticket
+            </h4>
             <div className="divide-y divide-[#ebebe8] text-xs">
-              {order.items.map(item => (
+              {order.items.map((item) => (
                 <div key={item.id} className="py-2 first:pt-0 flex justify-between items-center">
                   <div>
                     <span className="font-medium text-[#242424]">
@@ -153,7 +193,7 @@ export const OrderTrackerModal: React.FC<Props> = ({
                     </span>
                     {item.selectedModifiers.length > 0 && (
                       <p className="text-[11px] text-[#70706b]">
-                        {item.selectedModifiers.map(m => m.optionName).join(', ')}
+                        {item.selectedModifiers.map((m) => m.optionName).join(', ')}
                       </p>
                     )}
                   </div>

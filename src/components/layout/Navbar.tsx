@@ -38,12 +38,25 @@ export const Navbar: React.FC = () => {
   const { connected: isSupabaseConnected } = useSupabaseConnection();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const openServiceRequestsCount = serviceRequests.filter(r => r.status === 'open').length;
-  const pendingOrdersCount = orders.filter(o => o.status === 'pending' || o.status === 'preparing').length;
+  const openServiceRequestsCount = serviceRequests.filter((r) => r.status === 'open').length;
+  const pendingOrdersCount = orders.filter(
+    (o) => o.status === 'pending' || o.status === 'preparing',
+  ).length;
 
-  const navItems: { id: AppViewMode; label: string; icon: React.ReactNode; badge?: number; color?: string }[] = [
+  const navItems: {
+    id: AppViewMode;
+    label: string;
+    icon: React.ReactNode;
+    badge?: number;
+    color?: string;
+  }[] = [
     { id: 'customer', label: 'Customer Menu (QR)', icon: <Smartphone className="w-4 h-4" /> },
-    { id: 'kds', label: 'Kitchen (KDS)', icon: <ChefHat className="w-4 h-4" />, badge: pendingOrdersCount },
+    {
+      id: 'kds',
+      label: 'Kitchen (KDS)',
+      icon: <ChefHat className="w-4 h-4" />,
+      badge: pendingOrdersCount,
+    },
     { id: 'pos', label: 'POS & Cashier', icon: <LayoutGrid className="w-4 h-4" /> },
     { id: 'tables', label: 'Floor Plan & QR', icon: <TableIcon className="w-4 h-4" /> },
     { id: 'menu', label: 'Menu Catalog', icon: <BookOpen className="w-4 h-4" /> },
@@ -57,10 +70,13 @@ export const Navbar: React.FC = () => {
     { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
     { id: 'loyalty_admin', label: 'Loyalty & CRM', icon: <Award className="w-4 h-4" /> },
     { id: 'settings', label: 'SaaS & Branch', icon: <SettingsIcon className="w-4 h-4" /> },
-    ...(isAdmin ? [{ id: 'admin_users' as AppViewMode, label: 'Users', icon: <Users className="w-4 h-4" /> }] : []),
+    ...(isAdmin
+      ? [{ id: 'admin_users' as AppViewMode, label: 'Users', icon: <Users className="w-4 h-4" /> }]
+      : []),
   ];
 
-  const displayName = customer?.name || (staff ? `${staff.role[0].toUpperCase()}${staff.role.slice(1)}` : null);
+  const displayName =
+    customer?.name || (staff ? `${staff.role[0].toUpperCase()}${staff.role.slice(1)}` : null);
 
   return (
     <header className="sticky top-0 z-50 bg-[#16342b] text-white border-b border-[#2d4b41] shadow-sm select-none no-print">
@@ -73,12 +89,16 @@ export const Navbar: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-semibold tracking-tight text-[15px] text-white">{restaurant?.name || 'Setting up…'}</span>
+              <span className="font-semibold tracking-tight text-[15px] text-white">
+                {restaurant?.name || 'Setting up…'}
+              </span>
               <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-[#2d4b41] text-[#c8eadc] border border-[#46655a]">
                 Nordic OS
               </span>
             </div>
-            <p className="text-[11px] text-[#adcec0] hidden sm:block">Multi-tenant Restaurant SaaS & QR Platform</p>
+            <p className="text-[11px] text-[#adcec0] hidden sm:block">
+              Multi-tenant Restaurant SaaS & QR Platform
+            </p>
           </div>
         </div>
 
@@ -90,16 +110,16 @@ export const Navbar: React.FC = () => {
               <MapPin className="w-3.5 h-3.5 text-[#adcec0]" />
               <select
                 value={activeLocationId}
-                onChange={e => setActiveLocationId(e.target.value)}
+                onChange={(e) => setActiveLocationId(e.target.value)}
                 className="bg-transparent text-[#f9f9f7] text-xs font-medium focus:outline-none cursor-pointer"
               >
-                {restaurant.locations.map(loc => (
+                {restaurant.locations.map((loc) => (
                   <option key={loc.id} value={loc.id} className="bg-[#16342b] text-white">
                     {loc.name} ({loc.city})
                   </option>
                 ))}
               </select>
-          </div>
+            </div>
           )}
 
           {/* Supabase Status Pill */}
@@ -118,28 +138,40 @@ export const Navbar: React.FC = () => {
             title={soundEnabled ? 'Live Order Audio Alerts ON' : 'Audio Alerts Muted'}
             className="p-1.5 rounded-xl hover:bg-[#2d4b41] text-[#adcec0] hover:text-white transition-colors cursor-pointer"
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-[#c8eadc]" /> : <VolumeX className="w-4 h-4 text-[#727975]" />}
+            {soundEnabled ? (
+              <Volume2 className="w-4 h-4 text-[#c8eadc]" />
+            ) : (
+              <VolumeX className="w-4 h-4 text-[#727975]" />
+            )}
           </button>
 
           {/* Account Menu */}
           {user ? (
             <div className="relative">
               <button
+                aria-label="Account menu"
                 onClick={() => setMenuOpen(!menuOpen)}
                 className="flex items-center gap-1.5 bg-[#244238] hover:bg-[#2d4b41] px-2.5 py-1.5 rounded-xl border border-[#3a5d51] text-xs text-white transition-colors cursor-pointer"
               >
                 <UserCircle2 className="w-4 h-4 text-[#c8eadc]" />
-                <span className="hidden sm:inline max-w-[90px] truncate">{displayName || user.email}</span>
+                <span className="hidden sm:inline max-w-[90px] truncate">
+                  {displayName || user.email}
+                </span>
                 <ChevronDown className="w-3 h-3 text-[#adcec0]" />
               </button>
               {menuOpen && (
                 <div className="absolute right-0 top-full mt-1.5 w-48 bg-white rounded-xl border border-[#e5e3dd] shadow-lg py-1.5 z-50">
                   <div className="px-3 py-2 border-b border-[#f0efe9]">
                     <p className="text-xs font-medium text-[#242424] truncate">{user.email}</p>
-                    <p className="text-[10px] text-[#9a9a9a]">{customer ? 'Customer account' : `Staff · ${staff?.role}`}</p>
+                    <p className="text-[10px] text-[#9a9a9a]">
+                      {customer ? 'Customer account' : `Staff · ${staff?.role}`}
+                    </p>
                   </div>
                   <button
-                    onClick={() => { setMenuOpen(false); signOut(); }}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      signOut();
+                    }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8d4e2d] hover:bg-[#f9f9f7] cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" /> Sign out
@@ -156,7 +188,7 @@ export const Navbar: React.FC = () => {
       {/* Primary Navigation / View Tabs */}
       <div className="bg-[#0f241e] border-t border-[#23453a] overflow-x-auto no-scrollbar">
         <div className="max-w-7xl mx-auto px-4 flex items-center gap-1 py-1.5">
-          {navItems.map(item => {
+          {navItems.map((item) => {
             const isActive = viewMode === item.id;
             return (
               <button

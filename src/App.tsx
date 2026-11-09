@@ -33,7 +33,7 @@ const StaffShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { staff } = useAuth();
   const { needsOnboarding, loading, error, retry } = useTenant();
 
-  if (loading) {
+  if (loading && !needsOnboarding) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-[#16342b]" />
@@ -44,45 +44,126 @@ const StaffShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center px-4 text-center gap-3">
         <AlertTriangle className="w-8 h-8 text-red-500" />
-        <p className="text-sm text-[#6b6b6b] max-w-sm">Couldn't load your organization's data: {error}</p>
-        <button onClick={retry} className="text-sm font-medium text-[#16342b] underline">Retry</button>
+        <p className="text-sm text-[#6b6b6b] max-w-sm">
+          Couldn't load your organization's data: {error}
+        </p>
+        <button onClick={retry} className="text-sm font-medium text-[#16342b] underline">
+          Retry
+        </button>
       </div>
     );
   }
   if (needsOnboarding && staff) {
+    if (!['owner', 'admin'].includes(staff.role))
+      return (
+        <p className="p-8 text-center text-sm text-[#70706b]">
+          Ask your restaurant owner to finish restaurant setup before using staff tools.
+        </p>
+      );
     return <OnboardingWizard />;
   }
   return <>{children}</>;
 };
 
 const MainContent: React.FC = () => {
-  const { viewMode, restaurant, dataLoading, dataError, retryLoad } = useRestaurant();
+  const {
+    viewMode,
+    restaurant,
+    dataLoading,
+    dataError,
+    dataRefreshing,
+    mutationError,
+    dismissMutationError,
+    retryLoad,
+  } = useRestaurant();
   const { needsOnboarding } = useTenant();
 
   const renderActiveView = () => {
     switch (viewMode) {
       case 'customer':
-        return <CustomerAuthGate><CustomerView /></CustomerAuthGate>;
+        return (
+          <CustomerAuthGate>
+            <CustomerView />
+          </CustomerAuthGate>
+        );
       case 'kds':
-        return <StaffAuthGate><StaffShell><KitchenView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <KitchenView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'pos':
-        return <StaffAuthGate><StaffShell><POSView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <POSView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'tables':
-        return <StaffAuthGate><StaffShell><TablesFloorView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <TablesFloorView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'menu':
-        return <StaffAuthGate><StaffShell><MenuAdminView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <MenuAdminView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'service_desk':
-        return <StaffAuthGate><StaffShell><ServiceDeskView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <ServiceDeskView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'analytics':
-        return <StaffAuthGate><StaffShell><AnalyticsView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <AnalyticsView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'loyalty_admin':
-        return <StaffAuthGate><StaffShell><LoyaltyAdminView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <LoyaltyAdminView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'settings':
-        return <StaffAuthGate><StaffShell><SettingsView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <SettingsView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       case 'admin_users':
-        return <StaffAuthGate><StaffShell><AdminUsersView /></StaffShell></StaffAuthGate>;
+        return (
+          <StaffAuthGate>
+            <StaffShell>
+              <AdminUsersView />
+            </StaffShell>
+          </StaffAuthGate>
+        );
       default:
-        return <CustomerAuthGate><CustomerView /></CustomerAuthGate>;
+        return (
+          <CustomerAuthGate>
+            <CustomerView />
+          </CustomerAuthGate>
+        );
     }
   };
 
@@ -91,12 +172,14 @@ const MainContent: React.FC = () => {
   const isStaffView = viewMode !== 'customer';
 
   if (!isStaffView || !needsOnboarding) {
-    if (dataError) {
+    if (dataError && !restaurant) {
       return (
         <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4 text-center bg-[#f9f9f7]">
           <AlertTriangle className="w-8 h-8 text-red-500" />
           <p className="text-sm text-[#6b6b6b] max-w-sm">{dataError}</p>
-          <button onClick={retryLoad} className="text-sm font-medium text-[#16342b] underline">Retry</button>
+          <button onClick={retryLoad} className="text-sm font-medium text-[#16342b] underline">
+            Retry
+          </button>
         </div>
       );
     }
@@ -114,7 +197,26 @@ const MainContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f9f9f7] text-[#242424] flex flex-col selection:bg-[#c8eadc] selection:text-[#012018]">
-      <Navbar />
+      {viewMode !== 'customer' && <Navbar />}
+      {dataRefreshing && (
+        <p role="status" className="px-4 py-1 text-xs text-[#70706b]">
+          Refreshing restaurant data?
+        </p>
+      )}
+      {(mutationError || (dataError && restaurant)) && (
+        <div
+          role="alert"
+          className="px-4 py-3 bg-red-50 text-red-800 text-sm flex items-center justify-between gap-3"
+        >
+          <span>{mutationError || dataError}</span>
+          <button
+            onClick={mutationError ? dismissMutationError : retryLoad}
+            className="underline p-2"
+          >
+            {mutationError ? 'Dismiss' : 'Retry'}
+          </button>
+        </div>
+      )}
       <main className="flex-1 w-full">{renderActiveView()}</main>
     </div>
   );

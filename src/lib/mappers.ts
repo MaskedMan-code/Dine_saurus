@@ -24,14 +24,23 @@ export function mapLocation(l: any): RestaurantLocation {
     phone: l.phone || '',
     currency: l.currency,
     timezone: l.timezone,
-    isOpen: l.active,
+    isOpen: false,
     openingHours: '11:00 AM – 11:00 PM',
   };
 }
 
 export function mapRestaurant(r: any, locations: any[]): Restaurant {
   const currencyCode = locations[0]?.currency || 'INR';
-  const symbols: Record<string, string> = { INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'د.إ', SGD: 'S$', CAD: 'C$', AUD: 'A$' };
+  const symbols: Record<string, string> = {
+    INR: '₹',
+    USD: '$',
+    EUR: '€',
+    GBP: '£',
+    AED: 'د.إ',
+    SGD: 'S$',
+    CAD: 'C$',
+    AUD: 'A$',
+  };
   return {
     id: r.id,
     organizationId: r.organization_id,
@@ -41,14 +50,14 @@ export function mapRestaurant(r: any, locations: any[]): Restaurant {
     logoUrl: r.logo_path || '',
     coverImageUrl: r.cover_image_path || '',
     cuisineType: r.restaurant_type || '',
-    rating: r.rating ?? 4.8,
+    rating: r.rating ?? 0,
     totalReviews: r.total_reviews ?? 0,
-    avgPreparationTime: r.avg_preparation_time || '15-20 min',
+    avgPreparationTime: r.avg_preparation_time || 'Ask staff for an estimate',
     currencySymbol: symbols[currencyCode] || currencyCode,
     currencyCode,
     primaryColor: r.primary_color || '#16342b',
-    taxRatePercent: Number(r.tax_rate_percent ?? 8),
-    serviceChargePercent: Number(r.service_charge_percent ?? 5),
+    taxRatePercent: Number(r.tax_rate_percent ?? 0),
+    serviceChargePercent: Number(r.service_charge_percent ?? 0),
     locations: locations.map(mapLocation),
   };
 }
@@ -178,8 +187,9 @@ export function mapOrder(o: any, tableNumber?: string, areaName?: string): Order
     tipAmount: Number(o.tip_total),
     totalAmount: Number(o.grand_total),
     currency: o.currency,
-    customerName: o.customer?.name ?? o.customer_name,
-    customerPhone: o.customer?.phone ?? o.customer_phone,
+    customerId: o.customer_id,
+    customerName: o.customer?.name ?? o.customers?.name ?? o.customer_name,
+    customerPhone: o.customer?.phone ?? o.customers?.phone ?? o.customer_phone,
     specialNotes: o.customer_note,
     createdAt: o.created_at,
     updatedAt: o.updated_at,
