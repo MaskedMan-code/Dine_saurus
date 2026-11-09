@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import { useRouteView } from '../lib/route';
+import { readStorage, writeStorage } from '../lib/storage';
+import { diagnostic } from '../lib/diagnostics';
 
 export interface TenantRestaurant {
   id: string;
@@ -9,215 +12,236 @@ export interface TenantRestaurant {
   slug: string;
   status: string;
 }
-
 export interface TenantLocation {
   id: string;
   restaurantId: string;
   name: string;
 }
-
-interface ResolvedTable {
-  tableId: string;
-  locationId: string;
-  restaurantId: string;
-  organizationId: string;
-  publicToken: string;
-}
-
 type TenantSource = 'staff-org' | 'qr-token' | 'restaurant-slug' | 'none';
-
-interface TenantContextType {
-  loading: boolean;
-  error: string | null;
+interface TenantState {
+  key: string;
   source: TenantSource;
-
-  // Resolved identity
   organizationId: string | null;
-  restaurants: TenantRestaurant[]; // restaurants belonging to the resolved org (staff) or the single resolved one (guest)
+  restaurants: TenantRestaurant[];
   activeRestaurantId: string | null;
-  setActiveRestaurantId: (id: string) => void;
   activeLocationId: string | null;
-  setActiveLocationId: (id: string) => void;
-  resolvedTableId: string | null; // set only when a guest arrived via a table QR link
+  locations: TenantLocation[];
+  resolvedTableId: string | null;
   publicTableToken: string | null;
-
-  needsOnboarding: boolean; // staff, active, but their org owns zero restaurants
+}
+interface TenantContextType extends Omit<TenantState, 'key' | 'locations'> {
+  loading: boolean;
+  refreshing: boolean;
+  error: string | null;
+  needsOnboarding: boolean;
+  setActiveRestaurantId: (id: string) => void;
+  setActiveLocationId: (id: string) => void;
   retry: () => void;
 }
-
+const empty: TenantState = {
+  key: '',
+  source: 'none',
+  organizationId: null,
+  restaurants: [],
+  locations: [],
+  activeRestaurantId: null,
+  activeLocationId: null,
+  resolvedTableId: null,
+  publicTableToken: null,
+};
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
-
-const LAST_RESTAURANT_KEY = 'dinesaurus:lastRestaurantId';
-const LAST_LOCATION_KEY = 'dinesaurus:lastLocationId';
-const LAST_TABLE_TOKEN_KEY = 'dinesaurus:lastTableToken';
+const mapRestaurant = (r: any): TenantRestaurant => ({
+  id: r.id,
+  organizationId: r.organization_id,
+  name: r.name,
+  slug: r.slug,
+  status: r.status,
+});
 
 export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { loading: authLoading, isStaff, staff, isCustomer, customer } = useAuth();
-
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<TenantSource>('none');
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const [restaurants, setRestaurants] = useState<TenantRestaurant[]>([]);
-  const [activeRestaurantId, setActiveRestaurantIdState] = useState<string | null>(null);
-  const [activeLocationId, setActiveLocationIdState] = useState<string | null>(null);
-  const [resolvedTableId, setResolvedTableId] = useState<string | null>(null);
-  const [publicTableToken, setPublicTableToken] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  const setActiveRestaurantId = useCallback((id: string) => {
-    setActiveRestaurantIdState(id);
-    try { localStorage.setItem(LAST_RESTAURANT_KEY, id); } catch { /* ignore */ }
-  }, []);
-
-  const setActiveLocationId = useCallback((id: string) => {
-    setActiveLocationIdState(id);
-    try { localStorage.setItem(LAST_LOCATION_KEY, id); } catch { /* ignore */ }
-  }, []);
-
-  const retry = useCallback(() => setRefreshTick(t => t + 1), []);
+  const { authLoading, profileLoading, user, staff, isStaff } = useAuth();
+  const { viewMode, search } = useRouteView();
+  const publicRoute = viewMode === 'customer';
+  const params = new URLSearchParams(search);
+  const slug = publicRoute ? params.get('restaurant') : null;
+  // Explicit links always beat saved hints. Staff URLs never consume QR hints.
+  const token = publicRoute
+    ? (params.get('table') ?? (!slug ? readStorage('dinesaurus:lastTableToken', 'session') : null))
+    : null;
+  const staffOrg = !publicRoute && isStaff ? (staff?.organizationId ?? null) : null;
+  const key = publicRoute
+    ? `public:${token ?? ''}:${slug ?? ''}`
+    : `staff:${user?.id ?? ''}:${staffOrg ?? ''}`;
+  const [state, setState] = useState<TenantState>(empty);
+  const [busy, setBusy] = useState(true);
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
+  const [tick, setTick] = useState(0);
+  const [selection, setSelection] = useState<{ org: string; id: string } | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const waitingForAuth = !publicRoute && (authLoading || (!!user && profileLoading && !staff));
+  const chosenId = selection?.org === staffOrg ? selection?.id : null;
 
   useEffect(() => {
-    if (authLoading) return;
-    let cancelled = false;
-
-    async function resolve() {
-      setLoading(true);
-      setError(null);
-
+    if (waitingForAuth) return;
+    const controller = new AbortController();
+    setBusy(true);
+    setFailure(null);
+    diagnostic('tenant-resolve', { source: publicRoute ? (token ? 'qr' : 'slug') : 'staff' });
+    void (async () => {
       try {
-        // ---------- PATH 1: signed-in staff member -> resolve by organization_members, never guess ----------
-        if (isStaff && staff) {
-          setSource('staff-org');
-          setOrganizationId(staff.organizationId);
-
-          const { data: restRows, error: restErr } = await supabase
+        let next: TenantState = { ...empty, key };
+        if (publicRoute && token) {
+          const { data, error } = await supabase
+            .rpc('resolve_qr_context', { p_public_token: token })
+            .abortSignal(controller.signal);
+          if (error) throw new Error(error.message);
+          const row = Array.isArray(data) ? data[0] : data;
+          if (!row?.restaurant_id || !row?.table_id || !row?.public_token)
+            throw new Error(
+              'This QR code is invalid or revoked. Please ask the restaurant for a current QR code.',
+            );
+          next = {
+            ...next,
+            source: 'qr-token',
+            organizationId: row.organization_id,
+            activeRestaurantId: row.restaurant_id,
+            activeLocationId: row.location_id,
+            resolvedTableId: row.table_id,
+            publicTableToken: row.public_token,
+            restaurants: [
+              {
+                id: row.restaurant_id,
+                organizationId: row.organization_id,
+                name: row.restaurant_name,
+                slug: row.restaurant_slug,
+                status: 'active',
+              },
+            ],
+          };
+        } else if (publicRoute && slug) {
+          const { data, error } = await supabase
             .from('restaurants')
-            .select('id, organization_id, name, slug, status')
-            .eq('organization_id', staff.organizationId);
-
-          if (restErr) throw new Error(restErr.message);
-          if (cancelled) return;
-
-          const mapped: TenantRestaurant[] = (restRows || []).map((r: any) => ({
-            id: r.id, organizationId: r.organization_id, name: r.name, slug: r.slug, status: r.status,
-          }));
-          setRestaurants(mapped);
-
-          if (mapped.length === 0) {
-            setActiveRestaurantIdState(null);
-            setActiveLocationIdState(null);
-            setLoading(false);
-            return;
-          }
-
-          let lastRestId: string | null = null;
-          try { lastRestId = localStorage.getItem(LAST_RESTAURANT_KEY); } catch { /* ignore */ }
-          const chosen = mapped.find(r => r.id === lastRestId) || mapped[0];
-          setActiveRestaurantIdState(chosen.id);
-
-          const { data: locRows, error: locErr } = await supabase
-            .from('restaurant_locations')
-            .select('id, restaurant_id, name')
-            .eq('restaurant_id', chosen.id);
-          if (locErr) throw new Error(locErr.message);
-          if (cancelled) return;
-
-          let lastLocId: string | null = null;
-          try { lastLocId = localStorage.getItem(LAST_LOCATION_KEY); } catch { /* ignore */ }
-          const chosenLoc = (locRows || []).find((l: any) => l.id === lastLocId) || locRows?.[0];
-          setActiveLocationIdState(chosenLoc?.id || null);
-
-          setLoading(false);
-          return;
-        }
-
-        // ---------- PATH 2: guest / customer arriving via a table QR link ----------
-        const params = new URLSearchParams(window.location.search);
-        let tableToken = params.get('table');
-        if (!tableToken) {
-          try { tableToken = localStorage.getItem(LAST_TABLE_TOKEN_KEY); } catch { /* ignore */ }
-        }
-
-        if (tableToken) {
-          const { data: qrRows, error: qrErr } = await supabase.rpc('resolve_qr_context', { p_public_token: tableToken });
-          if (qrErr) throw new Error(qrErr.message);
-          const qrRow: any = Array.isArray(qrRows) ? qrRows[0] : qrRows;
-
-          if (qrRow) {
-            if (cancelled) return;
-            try { localStorage.setItem(LAST_TABLE_TOKEN_KEY, tableToken); } catch { /* ignore */ }
-            setSource('qr-token');
-            setOrganizationId(qrRow.organization_id);
-            setRestaurants([{ id: qrRow.restaurant_id, organizationId: qrRow.organization_id, name: qrRow.restaurant_name, slug: qrRow.restaurant_slug, status: 'active' }]);
-            setActiveRestaurantIdState(qrRow.restaurant_id);
-            setActiveLocationIdState(qrRow.location_id);
-            setResolvedTableId(qrRow.table_id);
-            setPublicTableToken(qrRow.public_token);
-            setLoading(false);
-            return;
-          }
-          // stale/invalid token: fall through to slug/demo resolution below
-        }
-
-        // ---------- PATH 3: guest arriving via a restaurant slug (?restaurant=slug) ----------
-        const slug = params.get('restaurant');
-        if (slug) {
-          const { data: restRow, error: restErr } = await supabase
-            .from('restaurants')
-            .select('id, organization_id, name, slug, status')
+            .select('id,organization_id,name,slug,status')
             .eq('slug', slug)
             .eq('status', 'active')
-            .maybeSingle();
-          if (restErr) throw new Error(restErr.message);
-          if (restRow) {
-            if (cancelled) return;
-            setSource('restaurant-slug');
-            setOrganizationId(restRow.organization_id);
-            setRestaurants([{ id: restRow.id, organizationId: restRow.organization_id, name: restRow.name, slug: restRow.slug, status: restRow.status }]);
-            setActiveRestaurantIdState(restRow.id);
-
-            const { data: locRows } = await supabase.from('restaurant_locations').select('id').eq('restaurant_id', restRow.id).limit(1);
-            setActiveLocationIdState(locRows?.[0]?.id || null);
-            setResolvedTableId(null);
-            setPublicTableToken(null);
-            setLoading(false);
-            return;
-          }
+            .abortSignal(controller.signal)
+            .single();
+          if (error || !data)
+            throw new Error('This restaurant link is unavailable. Please scan a current table QR.');
+          next = {
+            ...next,
+            source: 'restaurant-slug',
+            organizationId: data.organization_id,
+            restaurants: [mapRestaurant(data)],
+            activeRestaurantId: data.id,
+          };
+        } else if (!publicRoute && staffOrg) {
+          const { data, error } = await supabase
+            .from('restaurants')
+            .select('id,organization_id,name,slug,status')
+            .eq('organization_id', staffOrg)
+            .order('id')
+            .abortSignal(controller.signal);
+          if (error) throw new Error(error.message);
+          const restaurants = (data ?? []).map(mapRestaurant);
+          const selected = chosenId ?? readStorage(`dinesaurus:restaurant:${staffOrg}`);
+          next = {
+            ...next,
+            source: 'staff-org',
+            organizationId: staffOrg,
+            restaurants,
+            activeRestaurantId:
+              (restaurants.find((r) => r.id === selected) ?? restaurants[0])?.id ?? null,
+          };
         }
-
-        // ---------- PATH 4: nothing resolvable — this is a genuine empty state, not a guess ----------
-        setSource('none');
-        setOrganizationId(null);
-        setRestaurants([]);
-        setActiveRestaurantIdState(null);
-        setActiveLocationIdState(null);
-        setResolvedTableId(null);
-        setPublicTableToken(null);
-        setLoading(false);
-      } catch (err: any) {
-        if (!cancelled) {
-          setError(err?.message || 'Failed to resolve restaurant context');
-          setLoading(false);
+        if (next.activeRestaurantId) {
+          const { data, error } = await supabase
+            .from('restaurant_locations')
+            .select('id,restaurant_id,name')
+            .eq('restaurant_id', next.activeRestaurantId)
+            .eq('active', true)
+            .order('id')
+            .abortSignal(controller.signal);
+          if (error) throw new Error(error.message);
+          next.locations = (data ?? []).map((l) => ({
+            id: l.id,
+            restaurantId: l.restaurant_id,
+            name: l.name,
+          }));
+          const previous =
+            stateRef.current.key === key &&
+            stateRef.current.activeRestaurantId === next.activeRestaurantId
+              ? stateRef.current.activeLocationId
+              : null;
+          const saved = previous ?? readStorage(`dinesaurus:location:${next.activeRestaurantId}`);
+          next.activeLocationId =
+            next.activeLocationId ??
+            (next.locations.find((l) => l.id === saved) ?? next.locations[0])?.id ??
+            null;
         }
+        if (controller.signal.aborted) return;
+        if (next.publicTableToken)
+          writeStorage('dinesaurus:lastTableToken', next.publicTableToken, 'session');
+        else if (publicRoute) writeStorage('dinesaurus:lastTableToken', null, 'session');
+        setState(next);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setState({ ...empty, key });
+          setFailure({
+            key,
+            message: error instanceof Error ? error.message : 'Could not resolve this restaurant.',
+          });
+        }
+      } finally {
+        if (!controller.signal.aborted) setBusy(false);
       }
-    }
+    })();
+    return () => controller.abort();
+  }, [key, publicRoute, token, slug, staffOrg, chosenId, tick, waitingForAuth]);
 
-    resolve();
-    return () => { cancelled = true; };
-  }, [authLoading, isStaff, staff, isCustomer, customer, refreshTick]);
-
-  const needsOnboarding = !!(isStaff && staff?.isActive && !loading && !error && restaurants.length === 0 && source === 'staff-org');
-
+  // Hide the previous tenant synchronously, before effects or requests can finish.
+  const current =
+    state.key === key && (!chosenId || state.activeRestaurantId === chosenId)
+      ? state
+      : { ...empty, key };
+  const setActiveRestaurantId = useCallback(
+    (id: string) => {
+      if (!staffOrg || !stateRef.current.restaurants.some((r) => r.id === id)) return;
+      writeStorage(`dinesaurus:restaurant:${staffOrg}`, id);
+      setSelection({ org: staffOrg, id });
+    },
+    [staffOrg],
+  );
+  const setActiveLocationId = useCallback(
+    (id: string) => {
+      if (publicRoute || !stateRef.current.locations.some((l) => l.id === id)) return;
+      writeStorage(`dinesaurus:location:${stateRef.current.activeRestaurantId}`, id);
+      setState((s) => ({ ...s, activeLocationId: id }));
+    },
+    [publicRoute],
+  );
+  const retry = useCallback(() => setTick((t) => t + 1), []);
+  const loading =
+    waitingForAuth ||
+    ((busy || state.key !== key || current !== state) && !current.activeRestaurantId);
+  const error = failure?.key === key ? failure.message : null;
   return (
     <TenantContext.Provider
       value={{
-        loading, error, source,
-        organizationId, restaurants,
-        activeRestaurantId, setActiveRestaurantId,
-        activeLocationId, setActiveLocationId,
-        resolvedTableId, publicTableToken,
-        needsOnboarding,
+        ...current,
+        loading,
+        refreshing: busy && !!current.activeRestaurantId,
+        error,
+        needsOnboarding:
+          !publicRoute &&
+          !!staffOrg &&
+          !loading &&
+          !error &&
+          current.source === 'staff-org' &&
+          current.restaurants.length === 0,
+        setActiveRestaurantId,
+        setActiveLocationId,
         retry,
       }}
     >
@@ -225,9 +249,8 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     </TenantContext.Provider>
   );
 };
-
-export const useTenant = () => {
-  const ctx = useContext(TenantContext);
-  if (!ctx) throw new Error('useTenant must be used within TenantProvider');
-  return ctx;
-};
+export function useTenant() {
+  const context = useContext(TenantContext);
+  if (!context) throw new Error('useTenant must be used within TenantProvider');
+  return context;
+}

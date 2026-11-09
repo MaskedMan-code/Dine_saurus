@@ -1,0 +1,2 @@
+// A neutral placeholder avoids presenting a stock dish as a real menu photo.
+export const MENU_IMAGE_PLACEHOLDER = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240"><rect width="400" height="240" fill="#f4f4f2"/><circle cx="200" cy="100" r="42" fill="none" stroke="#c1c8c4" stroke-width="3"/><circle cx="200" cy="100" r="30" fill="none" stroke="#c1c8c4" stroke-width="2"/><text x="200" y="177" text-anchor="middle" fill="#70706b" font-family="sans-serif" font-size="15">Photo unavailable</text></svg>')}`;

@@ -1,8 +1,10 @@
-export type OrderStatus = 'pending' | 'accepted' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';
+export type OrderStatus =
+  'pending' | 'accepted' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';
 export type OrderMode = 'dine_in' | 'takeaway' | 'car_delivery' | 'token';
 export type PaymentStatus = 'unpaid' | 'pending' | 'paid' | 'failed' | 'refunded';
 export type TableStatus = 'available' | 'occupied' | 'reserved' | 'billed' | 'cleaning';
-export type ServiceRequestType = 'call_waiter' | 'request_bill' | 'need_water' | 'extra_cutlery' | 'clean_table' | 'other';
+export type ServiceRequestType =
+  'call_waiter' | 'request_bill' | 'need_water' | 'extra_cutlery' | 'clean_table' | 'other';
 export type ServiceRequestStatus = 'open' | 'acknowledged' | 'resolved';
 
 export interface DietaryTag {
@@ -35,6 +37,7 @@ export interface MenuItem {
   name: string;
   description: string;
   price: number;
+  basePrice?: number;
   currency: string;
   imageUrl: string;
   isVegetarian?: boolean;
@@ -44,6 +47,8 @@ export interface MenuItem {
   isBestseller?: boolean;
   isNew?: boolean;
   isSoldOut?: boolean;
+  /** Publication status is independent of temporary stock at a location. */
+  isActive?: boolean;
   preparationTimeMinutes?: number;
   calories?: number;
   modifierGroups?: ModifierGroup[];
@@ -147,6 +152,7 @@ export interface Order {
   tipAmount: number;
   totalAmount: number;
   currency: string;
+  customerId?: string;
   customerName?: string;
   customerPhone?: string;
   customerEmail?: string;

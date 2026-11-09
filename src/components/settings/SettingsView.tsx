@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { useAuth } from '../../context/AuthContext';
 import { useSupabaseConnection } from '../../lib/useSupabaseConnection';
@@ -22,11 +22,15 @@ import { SAAS_PLANS } from '../../data/seedData';
 import { SaaSPlan } from '../../types';
 
 export const SettingsView: React.FC = () => {
-  const {
-    restaurant,
-    activeLocationId,
-  } = useRestaurant();
-  const { staff } = useAuth();
+  const { restaurant, activeLocationId } = useRestaurant();
+  const { staff, isAdmin } = useAuth();
+  const { retryLoad } = useRestaurant();
+  const branchForm = useRef<HTMLFormElement>(null);
+  const taxForm = useRef<HTMLFormElement>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
+  const orgId = staff?.organizationId;
   const connection = useSupabaseConnection();
 
   const [activeTab, setActiveTab] = useState<'branch' | 'billing' | 'supabase' | 'taxes'>('branch');
@@ -35,10 +39,23 @@ export const SettingsView: React.FC = () => {
   const { currentPlan: saasPlan, setCurrentPlan: setSaasPlan } = useRestaurant();
 
   useEffect(() => {
-    if (!staff) return;
-    supabase.from('organizations').select('join_code').eq('id', staff.organizationId).maybeSingle()
-      .then(({ data }) => setJoinCode(data?.join_code || null));
-  }, [staff]);
+    if (!orgId || !isAdmin) return;
+    let cancelled = false;
+    void supabase
+      .from('organizations')
+      .select('join_code')
+      .eq('id', orgId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!cancelled) {
+          if (error) setSaveError(error.message);
+          else setJoinCode(data?.join_code || null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, isAdmin]);
 
   if (!restaurant) {
     return (
@@ -48,15 +65,48 @@ export const SettingsView: React.FC = () => {
     );
   }
 
-  const activeLoc = restaurant.locations.find(l => l.id === activeLocationId) || restaurant.locations[0];
+  const activeLoc =
+    restaurant.locations.find((l) => l.id === activeLocationId) || restaurant.locations[0];
+  if (!activeLoc) return <p className="p-6">No active location is configured.</p>;
 
-  const handleSave = (msg: string) => {
-    setSaveToast(msg);
-    setTimeout(() => setSaveToast(''), 3000);
+  const saveSettings = async (kind: 'branch' | 'tax') => {
+    if (saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
+    setSaveError(null);
+    setSaveToast('');
+    try {
+      const form = new FormData((kind === 'branch' ? branchForm.current : taxForm.current)!);
+      const { data, error } = await supabase.rpc('update_restaurant_settings_secure', {
+        p_restaurant_id: restaurant.id,
+        p_location_id: activeLoc.id,
+        p_name: kind === 'branch' ? String(form.get('name') ?? '').trim() : restaurant.name,
+        p_restaurant_type:
+          kind === 'branch' ? String(form.get('cuisine') ?? '') : restaurant.cuisineType,
+        p_address: kind === 'branch' ? String(form.get('address') ?? '') : activeLoc.address,
+        p_phone: kind === 'branch' ? String(form.get('phone') ?? '') : activeLoc.phone,
+        p_tax: kind === 'tax' ? Number(form.get('tax')) : null,
+        p_service: kind === 'tax' ? Number(form.get('service')) : null,
+      });
+      if (error || !data)
+        throw new Error(error?.message || 'The settings update was not confirmed.');
+      setSaveToast('Settings saved.');
+      retryLoad();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'The settings were not saved.');
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
+    }
   };
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      {saveError && (
+        <p role="alert" className="p-3 bg-red-50 text-red-700">
+          {saveError}
+        </p>
+      )}
       {/* Header */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
@@ -65,7 +115,9 @@ export const SettingsView: React.FC = () => {
           </div>
           <div>
             <h2 className="font-semibold text-lg text-slate-900">SaaS & Branch Settings</h2>
-            <p className="text-xs text-slate-500">Configure multi-branch locations, SaaS subscription plan, tax policies, and database</p>
+            <p className="text-xs text-slate-500">
+              Configure multi-branch locations, SaaS subscription plan, tax policies, and database
+            </p>
           </div>
         </div>
 
@@ -130,14 +182,24 @@ export const SettingsView: React.FC = () => {
 
       {/* Content Panes */}
       {activeTab === 'branch' && (
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
-          <h3 className="font-semibold text-base text-slate-900">Branch Configuration ({activeLoc.name})</h3>
+        <form
+          ref={branchForm}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveSettings('branch');
+          }}
+          className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6"
+        >
+          <h3 className="font-semibold text-base text-slate-900">
+            Branch Configuration ({activeLoc.name})
+          </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
               <label className="block font-medium text-slate-700 mb-1">Restaurant Brand Name</label>
               <input
                 type="text"
+                name="name"
                 defaultValue={restaurant.name}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -153,9 +215,12 @@ export const SettingsView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block font-medium text-slate-700 mb-1">Branch Physical Address</label>
+              <label className="block font-medium text-slate-700 mb-1">
+                Branch Physical Address
+              </label>
               <input
                 type="text"
+                name="address"
                 defaultValue={activeLoc.address}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -165,21 +230,28 @@ export const SettingsView: React.FC = () => {
               <label className="block font-medium text-slate-700 mb-1">Contact Phone</label>
               <input
                 type="text"
+                name="phone"
                 defaultValue={activeLoc.phone}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
             <div>
-              <label className="block font-medium text-slate-700 mb-1">Currency Code & Symbol</label>
+              <label className="block font-medium text-slate-700 mb-1">
+                Currency Code & Symbol
+              </label>
               <div className="flex gap-2">
                 <input
                   type="text"
+                  readOnly
+                  aria-readonly="true"
                   defaultValue={restaurant.currencySymbol}
                   className="w-20 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center font-bold"
                 />
                 <input
                   type="text"
+                  readOnly
+                  aria-readonly="true"
                   defaultValue={restaurant.currencyCode}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
@@ -190,6 +262,8 @@ export const SettingsView: React.FC = () => {
               <label className="block font-medium text-slate-700 mb-1">Operating Hours</label>
               <input
                 type="text"
+                readOnly
+                aria-readonly="true"
                 defaultValue={activeLoc.openingHours}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
@@ -198,24 +272,30 @@ export const SettingsView: React.FC = () => {
 
           <div className="pt-4 border-t border-slate-100 flex justify-end">
             <button
-              onClick={() => handleSave('Branch details saved successfully!')}
+              type="submit"
+              disabled={saving || !isAdmin}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 shadow-sm transition cursor-pointer"
             >
               Save Changes
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {activeTab === 'billing' && (
         <div className="space-y-4">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <h3 className="font-semibold text-base text-slate-900">Multi-tenant SaaS Subscription Tiers</h3>
-            <p className="text-xs text-slate-500">Select an active subscription tier to unlock multi-location, kitchen display, and loyalty perks.</p>
+            <h3 className="font-semibold text-base text-slate-900">
+              Multi-tenant SaaS Subscription Tiers
+            </h3>
+            <p className="text-xs text-slate-500">
+              Plan information is shown for reference. Billing and entitlement changes are handled
+              by your administrator.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {SAAS_PLANS.map(plan => {
+            {SAAS_PLANS.map((plan) => {
               const isCurrent = saasPlan.id === plan.id;
 
               return (
@@ -238,7 +318,9 @@ export const SettingsView: React.FC = () => {
                     </div>
 
                     <div className="mt-3 flex items-baseline">
-                      <span className="text-3xl font-extrabold text-slate-900">${plan.priceMonthly}</span>
+                      <span className="text-3xl font-extrabold text-slate-900">
+                        ${plan.priceMonthly}
+                      </span>
                       <span className="text-xs text-slate-500 ml-1">/ month</span>
                     </div>
 
@@ -258,7 +340,10 @@ export const SettingsView: React.FC = () => {
 
                       <div className="pt-2 space-y-1">
                         {plan.features.map((feat, i) => (
-                          <div key={i} className="flex items-center gap-1.5 text-[11px] text-slate-700">
+                          <div
+                            key={i}
+                            className="flex items-center gap-1.5 text-[11px] text-slate-700"
+                          >
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
                             <span>{feat}</span>
                           </div>
@@ -268,17 +353,15 @@ export const SettingsView: React.FC = () => {
                   </div>
 
                   <button
-                    onClick={() => {
-                      setSaasPlan(plan);
-                      handleSave(`Switched plan to ${plan.name}`);
-                    }}
+                    disabled
+                    title="Billing changes require administrator setup"
                     className={`mt-5 w-full py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
                       isCurrent
                         ? 'bg-slate-100 text-slate-700 border border-slate-200'
                         : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
                     }`}
                   >
-                    {isCurrent ? 'Current Tier' : 'Upgrade to Plan'}
+                    {isCurrent ? 'Current Tier' : 'Contact administrator'}
                   </button>
                 </div>
               );
@@ -288,42 +371,62 @@ export const SettingsView: React.FC = () => {
       )}
 
       {activeTab === 'taxes' && (
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
-          <h3 className="font-semibold text-base text-slate-900">Tax Rates & Automatic Service Charges</h3>
+        <form
+          ref={taxForm}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveSettings('tax');
+          }}
+          className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6"
+        >
+          <h3 className="font-semibold text-base text-slate-900">
+            Tax Rates & Automatic Service Charges
+          </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="block font-medium text-slate-700 mb-1">State / VAT Tax Rate (%)</label>
+              <label className="block font-medium text-slate-700 mb-1">
+                State / VAT Tax Rate (%)
+              </label>
               <input
                 type="number"
                 step="0.1"
+                name="tax"
                 defaultValue={restaurant.taxRatePercent}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <p className="text-[11px] text-slate-400 mt-1">Calculated automatically on subtotal during table checkout.</p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Calculated automatically on subtotal during table checkout.
+              </p>
             </div>
 
             <div>
-              <label className="block font-medium text-slate-700 mb-1">Staff Dine-in Service Charge (%)</label>
+              <label className="block font-medium text-slate-700 mb-1">
+                Staff Dine-in Service Charge (%)
+              </label>
               <input
                 type="number"
                 step="0.1"
+                name="service"
                 defaultValue={restaurant.serviceChargePercent}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
-              <p className="text-[11px] text-slate-400 mt-1">Applied for seated dine-in QR orders only.</p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Applied for seated dine-in QR orders only.
+              </p>
             </div>
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex justify-end">
             <button
-              onClick={() => handleSave('Tax and charge rates updated!')}
+              type="submit"
+              disabled={saving || !isAdmin}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold hover:bg-indigo-700 shadow-sm transition cursor-pointer"
             >
               Update Rates
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {activeTab === 'supabase' && (
@@ -333,8 +436,12 @@ export const SettingsView: React.FC = () => {
               <Database className="w-5 h-5 text-emerald-500" />
               <span>Supabase PostgreSQL & Realtime Status</span>
             </h3>
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${connection.connected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-              <span className={`w-2 h-2 rounded-full ${connection.connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}></span>
+            <div
+              className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-semibold ${connection.connected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${connection.connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`}
+              ></span>
               <span>{connection.connected ? 'Connected & Operational' : 'Connection Issue'}</span>
             </div>
           </div>
@@ -343,11 +450,17 @@ export const SettingsView: React.FC = () => {
             <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-500 font-medium">Supabase Realtime Channel:</span>
-                <code className="text-indigo-600 font-mono">public:orders, public:service_requests</code>
+                <code className="text-indigo-600 font-mono">
+                  public:orders, public:service_requests
+                </code>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-medium">Connection Status:</span>
-                <span className={`font-medium ${connection.connected ? 'text-emerald-700' : 'text-red-600'}`}>{connection.message}</span>
+                <span
+                  className={`font-medium ${connection.connected ? 'text-emerald-700' : 'text-red-600'}`}
+                >
+                  {connection.message}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-medium">Organization ID:</span>
@@ -358,9 +471,13 @@ export const SettingsView: React.FC = () => {
               <div className="p-4 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-indigo-900">Team join code</p>
-                  <p className="text-indigo-700">Share this with teammates so they can join your organization at signup.</p>
+                  <p className="text-indigo-700">
+                    Share this with teammates so they can join your organization at signup.
+                  </p>
                 </div>
-                <code className="text-lg font-bold tracking-widest bg-white px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-900">{joinCode}</code>
+                <code className="text-lg font-bold tracking-widest bg-white px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-900">
+                  {joinCode}
+                </code>
               </div>
             )}
           </div>

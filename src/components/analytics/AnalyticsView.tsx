@@ -28,16 +28,49 @@ export const AnalyticsView: React.FC = () => {
   }
 
   // Aggregate metrics
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.status !== 'cancelled' ? o.totalAmount : 0), 0);
-  const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'served');
-  const avgOrderValue = completedOrders.length > 0 ? totalRevenue / (completedOrders.length || 1) : 0;
-  const qrOrderCount = orders.filter(o => o.orderMode === 'dine_in').length;
-  const takeawayCount = orders.filter(o => o.orderMode === 'takeaway').length;
-  const carDeliveryCount = orders.filter(o => o.orderMode === 'car_delivery').length;
+  const totalRevenue = orders.reduce(
+    (sum, o) => sum + (o.status !== 'cancelled' ? o.totalAmount : 0),
+    0,
+  );
+  const completedOrders = orders.filter((o) => o.status === 'completed' || o.status === 'served');
+  const avgOrderValue =
+    completedOrders.length > 0
+      ? completedOrders.reduce((sum, o) => sum + o.totalAmount, 0) / completedOrders.length
+      : 0;
+  const share = (count: number) => (orders.length ? Math.round((count * 100) / orders.length) : 0);
+  const dishes = Object.values(
+    orders
+      .filter((o) => o.status !== 'cancelled')
+      .flatMap((o) => o.items)
+      .reduce(
+        (
+          acc: Record<string, { id: string; name: string; quantity: number; revenue: number }>,
+          item,
+        ) => {
+          const row = acc[item.menuItemId] ?? {
+            id: item.menuItemId,
+            name: item.itemNameSnapshot,
+            quantity: 0,
+            revenue: 0,
+          };
+          row.quantity += item.quantity;
+          row.revenue += item.subtotal;
+          acc[item.menuItemId] = row;
+          return acc;
+        },
+        {},
+      ),
+  )
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+  const qrOrderCount = orders.filter((o) => o.orderMode === 'dine_in').length;
+  const takeawayCount = orders.filter((o) => o.orderMode === 'takeaway').length;
+  const carDeliveryCount = orders.filter((o) => o.orderMode === 'car_delivery').length;
 
-  const avgReviewScore = reviews.length > 0
-    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
-    : '4.9';
+  const avgReviewScore =
+    reviews.length > 0
+      ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1)
+      : 'No ratings';
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
@@ -49,13 +82,21 @@ export const AnalyticsView: React.FC = () => {
           </div>
           <div>
             <h2 className="font-semibold text-lg text-slate-900">Executive Restaurant Analytics</h2>
-            <p className="text-xs text-slate-500">Live sales performance, QR table turnaround metrics, and revenue breakdown</p>
+            <p className="text-xs text-slate-500">
+              Live sales performance, QR table turnaround metrics, and revenue breakdown
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="px-3 py-1.5 rounded-lg bg-slate-100 font-medium text-slate-700">Today: Live Window</span>
-          <button className="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 font-medium border border-indigo-200 hover:bg-indigo-100 transition cursor-pointer">
+          <span className="px-3 py-1.5 rounded-lg bg-slate-100 font-medium text-slate-700">
+            Selected location ? loaded orders
+          </span>
+          <button
+            disabled
+            title="CSV export is not configured"
+            className="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 font-medium border border-indigo-200 hover:bg-indigo-100 transition cursor-pointer"
+          >
             Export CSV
           </button>
         </div>
@@ -66,21 +107,20 @@ export const AnalyticsView: React.FC = () => {
         {/* Gross Sales */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-500">Total Net Sales</span>
+            <span className="text-xs font-medium text-slate-500">
+              Order value (excluding cancellations)
+            </span>
             <span className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
               <DollarSign className="w-4 h-4" />
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900">
-              {restaurant.currencySymbol}{totalRevenue.toFixed(2)}
-            </span>
-            <span className="flex items-center text-xs font-semibold text-emerald-600">
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              +18.4%
+              {restaurant.currencySymbol}
+              {totalRevenue.toFixed(2)}
             </span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">vs yesterday ($1,420.00)</p>
+          <p className="text-[11px] text-slate-400 mt-1">Based on loaded orders</p>
         </div>
 
         {/* Total Orders */}
@@ -93,12 +133,8 @@ export const AnalyticsView: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900">{orders.length}</span>
-            <span className="flex items-center text-xs font-semibold text-emerald-600">
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              +12.1%
-            </span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Avg 14.2 orders/hr</p>
+          <p className="text-[11px] text-slate-400 mt-1">Orders visible to your account</p>
         </div>
 
         {/* Avg Order Value */}
@@ -111,14 +147,11 @@ export const AnalyticsView: React.FC = () => {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-900">
-              {restaurant.currencySymbol}{avgOrderValue.toFixed(2)}
-            </span>
-            <span className="flex items-center text-xs font-semibold text-emerald-600">
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              +6.3%
+              {restaurant.currencySymbol}
+              {avgOrderValue.toFixed(2)}
             </span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">QR upsells adding +$4.20/order</p>
+          <p className="text-[11px] text-slate-400 mt-1">Served and completed orders</p>
         </div>
 
         {/* Table Turn Time */}
@@ -130,13 +163,11 @@ export const AnalyticsView: React.FC = () => {
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900">32 min</span>
-            <span className="flex items-center text-xs font-semibold text-emerald-600">
-              <ArrowDownRight className="w-3.5 h-3.5" />
-              -8 min (Faster)
-            </span>
+            <span className="text-2xl font-bold text-slate-900">Not measured</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">QR instant checkout accelerated turns</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Table session reporting is not configured
+          </p>
         </div>
       </div>
 
@@ -153,30 +184,45 @@ export const AnalyticsView: React.FC = () => {
             <div>
               <div className="flex justify-between text-xs font-medium text-slate-700 mb-1">
                 <span>QR Table Dine-in</span>
-                <span>{qrOrderCount} orders (68%)</span>
+                <span>
+                  {qrOrderCount} orders ({share(qrOrderCount)}%)
+                </span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-indigo-600 h-2 rounded-full" style={{ width: '68%' }}></div>
+                <div
+                  className="bg-indigo-600 h-2 rounded-full"
+                  style={{ width: `${share(qrOrderCount)}%` }}
+                ></div>
               </div>
             </div>
 
             <div>
               <div className="flex justify-between text-xs font-medium text-slate-700 mb-1">
                 <span>Takeaway Counter</span>
-                <span>{takeawayCount} orders (22%)</span>
+                <span>
+                  {takeawayCount} orders ({share(takeawayCount)}%)
+                </span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-emerald-500 h-2 rounded-full" style={{ width: '22%' }}></div>
+                <div
+                  className="bg-emerald-500 h-2 rounded-full"
+                  style={{ width: `${share(takeawayCount)}%` }}
+                ></div>
               </div>
             </div>
 
             <div>
               <div className="flex justify-between text-xs font-medium text-slate-700 mb-1">
                 <span>Curbside Car Delivery</span>
-                <span>{carDeliveryCount} orders (10%)</span>
+                <span>
+                  {carDeliveryCount} orders ({share(carDeliveryCount)}%)
+                </span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-amber-500 h-2 rounded-full" style={{ width: '10%' }}></div>
+                <div
+                  className="bg-amber-500 h-2 rounded-full"
+                  style={{ width: `${share(carDeliveryCount)}%` }}
+                ></div>
               </div>
             </div>
           </div>
@@ -184,11 +230,11 @@ export const AnalyticsView: React.FC = () => {
           <div className="mt-6 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
             <div className="flex justify-between">
               <span>Contactless Digital Adoption:</span>
-              <strong className="text-slate-900">92%</strong>
+              <strong className="text-slate-900">Not measured</strong>
             </div>
             <div className="flex justify-between">
               <span>Avg Server Tip Rate:</span>
-              <strong className="text-emerald-700">14.8%</strong>
+              <strong className="text-emerald-700">Not measured</strong>
             </div>
           </div>
         </div>
@@ -212,34 +258,25 @@ export const AnalyticsView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                <tr className="hover:bg-slate-50/70">
-                  <td className="py-3 px-3 font-medium text-slate-900">Nordic Truffle Salmon Bowl</td>
-                  <td className="py-3 px-3">48 bowls</td>
-                  <td className="py-3 px-3 font-semibold text-slate-900">$1,056.00</td>
-                  <td className="py-3 px-3 text-emerald-600 font-medium">74%</td>
-                  <td className="py-3 px-3">⭐ 4.9</td>
-                </tr>
-                <tr className="hover:bg-slate-50/70">
-                  <td className="py-3 px-3 font-medium text-slate-900">Artisan Sourdough Toast</td>
-                  <td className="py-3 px-3">62 orders</td>
-                  <td className="py-3 px-3 font-semibold text-slate-900">$744.00</td>
-                  <td className="py-3 px-3 text-emerald-600 font-medium">81%</td>
-                  <td className="py-3 px-3">⭐ 4.8</td>
-                </tr>
-                <tr className="hover:bg-slate-50/70">
-                  <td className="py-3 px-3 font-medium text-slate-900">Cloudberry Espresso Tonic</td>
-                  <td className="py-3 px-3">85 drinks</td>
-                  <td className="py-3 px-3 font-semibold text-slate-900">$595.00</td>
-                  <td className="py-3 px-3 text-emerald-600 font-medium">88%</td>
-                  <td className="py-3 px-3">⭐ 5.0</td>
-                </tr>
-                <tr className="hover:bg-slate-50/70">
-                  <td className="py-3 px-3 font-medium text-slate-900">Cardamom Brioche Knot</td>
-                  <td className="py-3 px-3">54 pastries</td>
-                  <td className="py-3 px-3 font-semibold text-slate-900">$324.00</td>
-                  <td className="py-3 px-3 text-emerald-600 font-medium">82%</td>
-                  <td className="py-3 px-3">⭐ 4.9</td>
-                </tr>
+                {dishes.map((dish) => (
+                  <tr key={dish.id}>
+                    <td className="p-3">{dish.name}</td>
+                    <td className="p-3">{dish.quantity}</td>
+                    <td className="p-3">
+                      {restaurant.currencySymbol}
+                      {dish.revenue.toFixed(2)}
+                    </td>
+                    <td className="p-3">Not recorded</td>
+                    <td className="p-3">Not recorded</td>
+                  </tr>
+                ))}
+                {!dishes.length && (
+                  <tr>
+                    <td colSpan={5} className="p-4 text-slate-500">
+                      No order items to report yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

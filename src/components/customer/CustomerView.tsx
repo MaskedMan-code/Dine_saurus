@@ -1,3 +1,4 @@
+import { MENU_IMAGE_PLACEHOLDER } from '../../lib/placeholder';
 import React, { useState, useRef } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { MenuItem } from '../../types';
@@ -49,15 +50,8 @@ export const CustomerView: React.FC = () => {
     cartItemCount,
     cartTotalAmount,
     activeOrder,
+    trackingError,
   } = useRestaurant();
-
-  if (!restaurant) {
-    return (
-      <div className="min-h-[50vh] flex items-center justify-center text-sm text-[#6b6b6b]">
-        No restaurant loaded.
-      </div>
-    );
-  }
 
   // Modals & Drawers state
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
@@ -68,13 +62,23 @@ export const CustomerView: React.FC = () => {
   const [isReviewOpen, setIsReviewOpen] = useState<boolean>(false);
   const [isTableSelectorOpen, setIsTableSelectorOpen] = useState<boolean>(false);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState<boolean>(false);
-  const [activeBottomNav, setActiveBottomNav] = useState<'home' | 'menu' | 'orders' | 'loyalty' | 'more'>('menu');
+  const [activeBottomNav, setActiveBottomNav] = useState<
+    'home' | 'menu' | 'orders' | 'loyalty' | 'more'
+  >('menu');
 
   const menuSectionRef = useRef<HTMLDivElement>(null);
-  const currentArea = activeTable ? areas.find(a => a.id === activeTable.areaId) : null;
+  if (!restaurant) {
+    return (
+      <div className="min-h-[50vh] flex items-center justify-center text-sm text-[#6b6b6b]">
+        No restaurant loaded.
+      </div>
+    );
+  }
+
+  const currentArea = activeTable ? areas.find((a) => a.id === activeTable.areaId) : null;
 
   // Filtered menu items
-  const filteredItems = menuItems.filter(item => {
+  const filteredItems = menuItems.filter((item) => {
     // Search query match
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -96,8 +100,8 @@ export const CustomerView: React.FC = () => {
     return true;
   });
 
-  const popularItems = menuItems.filter(i => i.isBestseller || i.isFeatured);
-  const chefsPicks = menuItems.filter(i => i.id === 'item_07' || i.id === 'item_06' || i.id === 'item_05' || i.id === 'item_02');
+  const popularItems = menuItems.filter((i) => i.isBestseller || i.isFeatured);
+  const chefsPicks = menuItems.filter((i) => i.isFeatured);
 
   const scrollToMenu = () => {
     setActiveBottomNav('menu');
@@ -106,13 +110,21 @@ export const CustomerView: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f9f9f7] text-[#242424] pb-32 md:pb-20 flex flex-col items-center">
+      {trackingError && (
+        <p role="alert" className="p-3 text-sm text-red-700">
+          {trackingError}
+        </p>
+      )}
       {/* Container simulating mobile-first responsive PWA layout */}
       <div className="w-full max-w-md md:max-w-4xl bg-[#f9f9f7] min-h-screen shadow-md relative md:border-x md:border-[#ebebe8]">
         {/* Top Header */}
         <header className="sticky top-0 z-40 bg-[#f9f9f7]/95 backdrop-blur-md px-4 py-3.5 border-b border-[#ebebe8] flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-[#e8e8e6] flex items-center justify-center text-[#16342b] shadow-sm">
-              <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+              <span
+                className="material-symbols-outlined text-[20px]"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
                 restaurant
               </span>
             </div>
@@ -122,9 +134,13 @@ export const CustomerView: React.FC = () => {
               </h1>
               <div className="flex items-center gap-1.5 mt-1">
                 <span className="w-2 h-2 rounded-full bg-[#16342b] inline-block animate-pulse"></span>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#70706b]">Open Now</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#70706b]">
+                  Restaurant menu
+                </span>
                 <span className="text-[#c1c8c4]">•</span>
-                <span className="text-[10px] font-semibold text-[#16342b]">Table {activeTable?.tableNumber || '12'}</span>
+                <span className="text-[10px] font-semibold text-[#16342b]">
+                  Table {activeTable?.tableNumber || '?'}
+                </span>
               </div>
             </div>
           </div>
@@ -161,8 +177,11 @@ export const CustomerView: React.FC = () => {
         <section className="relative px-4 pt-3 pb-12">
           <div className="relative h-64 sm:h-72 w-full rounded-2xl overflow-hidden shadow-sm border border-[#ebebe8]">
             <img
-              src={restaurant.coverImageUrl || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&auto=format&fit=crop&q=80'}
-              alt="Harbor Bistro Terrace"
+              src={
+                restaurant.coverImageUrl ||
+                'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&auto=format&fit=crop&q=80'
+              }
+              alt={restaurant.name}
               className="w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#16342b]/70 via-transparent to-transparent"></div>
@@ -176,10 +195,10 @@ export const CustomerView: React.FC = () => {
                   You're ordering from
                 </p>
                 <h2 className="text-xl font-bold text-[#16342b] mt-0.5">
-                  Table {activeTable?.tableNumber || '12'}
+                  Table {activeTable?.tableNumber || '?'}
                 </h2>
                 <p className="text-xs text-[#70706b]">
-                  {currentArea?.name || 'Outdoor Terrace'}
+                  {currentArea?.name || 'Scan your table QR to order'}
                 </p>
               </div>
 
@@ -196,16 +215,20 @@ export const CustomerView: React.FC = () => {
             <div className="flex justify-between items-center text-xs text-[#414845] font-medium">
               <div className="flex items-center gap-1 text-[#8d4e2d]">
                 <Star className="w-4 h-4 fill-[#8d4e2d] text-[#8d4e2d]" />
-                <span className="font-bold text-[#242424]">4.8</span>
-                <span className="text-[#70706b]">(384)</span>
+                <span className="font-bold text-[#242424]">
+                  {restaurant.rating ? restaurant.rating.toFixed(1) : 'No ratings'}
+                </span>
+                {restaurant.totalReviews > 0 && (
+                  <span className="text-[#70706b]">({restaurant.totalReviews})</span>
+                )}
               </div>
               <div className="flex items-center gap-1 text-[#70706b]">
                 <Clock className="w-4 h-4" />
-                <span>15-20 min</span>
+                <span>{restaurant.avgPreparationTime}</span>
               </div>
               <div className="flex items-center gap-1 text-[#16342b]">
                 <Leaf className="w-4 h-4 text-[#16342b]" />
-                <span>Vegan / GF</span>
+                <span>Dietary filters</span>
               </div>
             </div>
           </div>
@@ -223,109 +246,132 @@ export const CustomerView: React.FC = () => {
         </div>
 
         {/* Popular Now Carousel Section */}
-        <section className="mt-8">
-          <div className="px-4 flex justify-between items-end mb-3">
-            <div>
-              <h3 className="text-lg font-bold text-[#16342b] tracking-tight">Popular Now</h3>
-              <p className="text-xs text-[#70706b]">Guest favorites & freshly prepared dishes</p>
+        {popularItems.length > 0 && (
+          <section className="mt-8">
+            <div className="px-4 flex justify-between items-end mb-3">
+              <div>
+                <h3 className="text-lg font-bold text-[#16342b] tracking-tight">Popular Now</h3>
+                <p className="text-xs text-[#70706b]">Guest favorites & freshly prepared dishes</p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex overflow-x-auto hide-scrollbar gap-3.5 px-4 pb-2 snap-x">
-            {popularItems.map(item => (
-              <div
-                key={item.id}
-                onClick={() => setCustomizingItem(item)}
-                className="snap-start shrink-0 w-60 sm:w-64 bg-[#fcfcfb] rounded-2xl overflow-hidden shadow-sm border border-[#ebebe8] flex flex-col group cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <div className="h-32 w-full relative overflow-hidden bg-[#eeeeec]">
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  {item.isBestseller && (
-                    <div className="absolute top-2.5 left-2.5 bg-[#8d4e2d] text-white px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 shadow-sm">
-                      <Flame className="w-3 h-3" />
-                      Bestseller
-                    </div>
-                  )}
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      setCustomizingItem(item);
-                    }}
-                    className="absolute top-2.5 right-2.5 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-[#16342b] shadow-sm hover:bg-white cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="p-4 flex flex-col justify-between flex-grow">
-                  <div>
-                    <h4 className="font-semibold text-sm text-[#16342b] line-clamp-1">{item.name}</h4>
-                    <p className="text-xs text-[#70706b] line-clamp-2 mt-0.5">{item.description}</p>
+            <div className="flex overflow-x-auto hide-scrollbar gap-3.5 px-4 pb-2 snap-x">
+              {popularItems.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setCustomizingItem(item)}
+                  className="snap-start shrink-0 w-60 sm:w-64 bg-[#fcfcfb] rounded-2xl overflow-hidden shadow-sm border border-[#ebebe8] flex flex-col group cursor-pointer hover:shadow-md transition-shadow"
+                >
+                  <div className="h-32 w-full relative overflow-hidden bg-[#eeeeec]">
+                    <img
+                      src={item.imageUrl || MENU_IMAGE_PLACEHOLDER}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = MENU_IMAGE_PLACEHOLDER;
+                      }}
+                      alt={item.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                    {item.isBestseller && (
+                      <div className="absolute top-2.5 left-2.5 bg-[#8d4e2d] text-white px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 shadow-sm">
+                        <Flame className="w-3 h-3" />
+                        Bestseller
+                      </div>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCustomizingItem(item);
+                      }}
+                      className="absolute top-2.5 right-2.5 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-[#16342b] shadow-sm hover:bg-white cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
-                  <div className="mt-3 flex justify-between items-center">
+                  <div className="p-4 flex flex-col justify-between flex-grow">
+                    <div>
+                      <h4 className="font-semibold text-sm text-[#16342b] line-clamp-1">
+                        {item.name}
+                      </h4>
+                      <p className="text-xs text-[#70706b] line-clamp-2 mt-0.5">
+                        {item.description}
+                      </p>
+                    </div>
+                    <div className="mt-3 flex justify-between items-center">
+                      <span className="font-bold text-sm text-[#16342b]">
+                        {restaurant.currencySymbol}
+                        {item.price.toFixed(2)}
+                      </span>
+                      <span className="text-[11px] font-medium text-[#16342b] bg-[#c8eadc] px-2 py-0.5 rounded-full">
+                        Customize
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Chef's Picks Section */}
+        {chefsPicks.length > 0 && (
+          <section className="mt-6 px-4">
+            <div className="flex justify-between items-end mb-3">
+              <h3 className="text-lg font-bold text-[#16342b] tracking-tight">Chef's Picks</h3>
+            </div>
+            <div className="flex flex-col gap-3">
+              {chefsPicks.slice(0, 2).map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setCustomizingItem(item)}
+                  className="flex bg-[#fcfcfb] rounded-2xl overflow-hidden shadow-sm border border-[#ebebe8] p-3 gap-3.5 items-center cursor-pointer hover:shadow-md transition-shadow"
+                >
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden shrink-0 bg-[#eeeeec]">
+                    <img
+                      src={item.imageUrl || MENU_IMAGE_PLACEHOLDER}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = MENU_IMAGE_PLACEHOLDER;
+                      }}
+                      alt={item.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-grow flex flex-col justify-center">
+                    <h4 className="font-semibold text-sm text-[#16342b] mb-0.5">{item.name}</h4>
+                    <p className="text-xs text-[#70706b] line-clamp-2 mb-1.5">{item.description}</p>
                     <span className="font-bold text-sm text-[#16342b]">
                       {restaurant.currencySymbol}
                       {item.price.toFixed(2)}
                     </span>
-                    <span className="text-[11px] font-medium text-[#16342b] bg-[#c8eadc] px-2 py-0.5 rounded-full">
-                      Customize
-                    </span>
                   </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCustomizingItem(item);
+                    }}
+                    className="w-9 h-9 bg-[#f4f4f2] rounded-full flex items-center justify-center text-[#16342b] hover:bg-[#ebebe8] transition-colors shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Chef's Picks Section */}
-        <section className="mt-6 px-4">
-          <div className="flex justify-between items-end mb-3">
-            <h3 className="text-lg font-bold text-[#16342b] tracking-tight">Chef's Picks</h3>
-          </div>
-          <div className="flex flex-col gap-3">
-            {chefsPicks.slice(0, 2).map(item => (
-              <div
-                key={item.id}
-                onClick={() => setCustomizingItem(item)}
-                className="flex bg-[#fcfcfb] rounded-2xl overflow-hidden shadow-sm border border-[#ebebe8] p-3 gap-3.5 items-center cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl overflow-hidden shrink-0 bg-[#eeeeec]">
-                  <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-grow flex flex-col justify-center">
-                  <h4 className="font-semibold text-sm text-[#16342b] mb-0.5">{item.name}</h4>
-                  <p className="text-xs text-[#70706b] line-clamp-2 mb-1.5">{item.description}</p>
-                  <span className="font-bold text-sm text-[#16342b]">
-                    {restaurant.currencySymbol}
-                    {item.price.toFixed(2)}
-                  </span>
-                </div>
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    setCustomizingItem(item);
-                  }}
-                  className="w-9 h-9 bg-[#f4f4f2] rounded-full flex items-center justify-center text-[#16342b] hover:bg-[#ebebe8] transition-colors shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Search & Filter Toolbar */}
-        <section ref={menuSectionRef} className="mt-8 px-4 sticky top-[57px] z-30 bg-[#f9f9f7]/95 backdrop-blur-md py-2 border-b border-[#ebebe8]">
+        <section
+          ref={menuSectionRef}
+          className="mt-8 px-4 sticky top-[57px] z-30 bg-[#f9f9f7]/95 backdrop-blur-md py-2 border-b border-[#ebebe8]"
+        >
           <div className="flex gap-2 items-center">
             <div className="relative flex-grow">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#727975]" />
               <input
                 type="text"
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search dishes, drinks..."
                 className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#fcfcfb] border border-[#ebebe8] text-sm text-[#242424] focus:outline-none focus:border-[#16342b] transition-colors shadow-sm"
               />
@@ -356,7 +402,7 @@ export const CustomerView: React.FC = () => {
           {isFilterDropdownOpen && (
             <div className="mt-2 p-3 bg-[#fcfcfb] rounded-xl border border-[#ebebe8] shadow-lg flex flex-wrap gap-2 animate-in fade-in duration-150">
               <button
-                onClick={() => setDietaryFilters(p => ({ ...p, vegetarian: !p.vegetarian }))}
+                onClick={() => setDietaryFilters((p) => ({ ...p, vegetarian: !p.vegetarian }))}
                 className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
                   dietaryFilters.vegetarian
                     ? 'bg-[#16342b] text-white border-[#16342b]'
@@ -366,7 +412,7 @@ export const CustomerView: React.FC = () => {
                 Vegetarian (V)
               </button>
               <button
-                onClick={() => setDietaryFilters(p => ({ ...p, vegan: !p.vegan }))}
+                onClick={() => setDietaryFilters((p) => ({ ...p, vegan: !p.vegan }))}
                 className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
                   dietaryFilters.vegan
                     ? 'bg-[#16342b] text-white border-[#16342b]'
@@ -376,7 +422,7 @@ export const CustomerView: React.FC = () => {
                 Vegan (VG)
               </button>
               <button
-                onClick={() => setDietaryFilters(p => ({ ...p, glutenFree: !p.glutenFree }))}
+                onClick={() => setDietaryFilters((p) => ({ ...p, glutenFree: !p.glutenFree }))}
                 className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
                   dietaryFilters.glutenFree
                     ? 'bg-[#16342b] text-white border-[#16342b]'
@@ -392,7 +438,7 @@ export const CustomerView: React.FC = () => {
         {/* Category Carousel (Popular, Starters, Mains, Burgers, Pizza, Desserts, Drinks) */}
         <section className="px-4 py-3">
           <div className="flex overflow-x-auto no-scrollbar gap-2 pb-1">
-            {categories.map(cat => {
+            {categories.map((cat) => {
               const isSelected = selectedCategory === cat.id;
               return (
                 <button
@@ -417,7 +463,9 @@ export const CustomerView: React.FC = () => {
             <div className="text-center py-16 px-4 bg-[#fcfcfb] rounded-2xl border border-[#ebebe8] space-y-2">
               <span className="material-symbols-outlined text-4xl text-[#727975]">no_food</span>
               <h4 className="font-bold text-[#242424]">No dishes found</h4>
-              <p className="text-xs text-[#70706b]">Try changing your search terms or dietary filters.</p>
+              <p className="text-xs text-[#70706b]">
+                Try changing your search terms or dietary filters.
+              </p>
               <button
                 onClick={() => {
                   setSearchQuery('');
@@ -431,7 +479,7 @@ export const CustomerView: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredItems.map(item => (
+              {filteredItems.map((item) => (
                 <article
                   key={item.id}
                   onClick={() => !item.isSoldOut && setCustomizingItem(item)}
@@ -443,7 +491,11 @@ export const CustomerView: React.FC = () => {
                 >
                   <div className="relative h-48 w-full overflow-hidden bg-[#eeeeec]">
                     <img
-                      src={item.imageUrl}
+                      src={item.imageUrl || MENU_IMAGE_PLACEHOLDER}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = MENU_IMAGE_PLACEHOLDER;
+                      }}
                       alt={item.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
@@ -483,7 +535,9 @@ export const CustomerView: React.FC = () => {
                           {item.price.toFixed(2)}
                         </span>
                       </div>
-                      <p className="text-xs text-[#70706b] line-clamp-2 leading-relaxed mb-4">{item.description}</p>
+                      <p className="text-xs text-[#70706b] line-clamp-2 leading-relaxed mb-4">
+                        {item.description}
+                      </p>
                     </div>
 
                     <div className="flex justify-between items-center mt-auto">
@@ -518,7 +572,7 @@ export const CustomerView: React.FC = () => {
                       {/* Add Button */}
                       <button
                         disabled={item.isSoldOut}
-                        onClick={e => {
+                        onClick={(e) => {
                           e.stopPropagation();
                           if (!item.isSoldOut) setCustomizingItem(item);
                         }}
@@ -542,6 +596,7 @@ export const CustomerView: React.FC = () => {
         {cartItemCount > 0 && (
           <div className="fixed bottom-[84px] md:bottom-8 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-[360px]">
             <button
+              aria-label="View cart and checkout"
               onClick={() => setIsCheckoutOpen(true)}
               className="w-full bg-[#16342b] text-white rounded-full py-3.5 px-5 flex items-center justify-between shadow-[0_8px_24px_rgba(22,52,43,0.25)] hover:bg-[#2d4b41] transition-all cursor-pointer"
             >
@@ -565,17 +620,19 @@ export const CustomerView: React.FC = () => {
         )}
 
         {/* Active Order Tracker Pill */}
-        {activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
-          <div className="fixed bottom-36 md:bottom-24 right-4 z-40">
-            <button
-              onClick={() => setIsTrackerOpen(true)}
-              className="bg-[#16342b] text-white px-4 py-2 rounded-full shadow-lg text-xs font-bold flex items-center gap-2 hover:bg-[#2d4b41] animate-bounce cursor-pointer border border-[#3e6357]"
-            >
-              <Clock className="w-3.5 h-3.5 text-[#c8eadc]" />
-              <span>Track Order {activeOrder.orderNumber}</span>
-            </button>
-          </div>
-        )}
+        {activeOrder &&
+          activeOrder.status !== 'completed' &&
+          activeOrder.status !== 'cancelled' && (
+            <div className="fixed bottom-36 md:bottom-24 right-4 z-40">
+              <button
+                onClick={() => setIsTrackerOpen(true)}
+                className="bg-[#16342b] text-white px-4 py-2 rounded-full shadow-lg text-xs font-bold flex items-center gap-2 hover:bg-[#2d4b41] cursor-pointer border border-[#3e6357]"
+              >
+                <Clock className="w-3.5 h-3.5 text-[#c8eadc]" />
+                <span>Track Order {activeOrder.orderNumber}</span>
+              </button>
+            </div>
+          )}
 
         {/* Bottom Navigation Bar */}
         <nav className="fixed bottom-0 left-0 right-0 max-w-md md:max-w-4xl mx-auto bg-[#f9f9f7]/90 backdrop-blur-xl border-t border-[#ebebe8] z-40 pb-safe shadow-[0_-4px_16px_rgba(22,52,43,0.06)]">
@@ -591,7 +648,12 @@ export const CustomerView: React.FC = () => {
                   : 'text-[#414845] hover:text-[#16342b]'
               }`}
             >
-              <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeBottomNav === 'home' ? "'FILL' 1" : "'FILL' 0" }}>
+              <span
+                className="material-symbols-outlined text-[20px]"
+                style={{
+                  fontVariationSettings: activeBottomNav === 'home' ? "'FILL' 1" : "'FILL' 0",
+                }}
+              >
                 home
               </span>
               <span className="text-[10px] font-semibold mt-0.5">Home</span>
@@ -608,7 +670,12 @@ export const CustomerView: React.FC = () => {
                   : 'text-[#414845] hover:text-[#16342b]'
               }`}
             >
-              <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: activeBottomNav === 'menu' ? "'FILL' 1" : "'FILL' 0" }}>
+              <span
+                className="material-symbols-outlined text-[20px]"
+                style={{
+                  fontVariationSettings: activeBottomNav === 'menu' ? "'FILL' 1" : "'FILL' 0",
+                }}
+              >
                 restaurant_menu
               </span>
               <span className="text-[10px] font-semibold mt-0.5">Menu</span>
@@ -674,7 +741,7 @@ export const CustomerView: React.FC = () => {
       <CheckoutDrawer
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
-        onOrderPlaced={orderId => setIsTrackerOpen(true)}
+        onOrderPlaced={(orderId) => setIsTrackerOpen(true)}
       />
 
       <OrderTrackerModal
@@ -688,20 +755,11 @@ export const CustomerView: React.FC = () => {
         }}
       />
 
-      <ServiceRequestModal
-        isOpen={isServiceOpen}
-        onClose={() => setIsServiceOpen(false)}
-      />
+      <ServiceRequestModal isOpen={isServiceOpen} onClose={() => setIsServiceOpen(false)} />
 
-      <LoyaltyDrawer
-        isOpen={isLoyaltyOpen}
-        onClose={() => setIsLoyaltyOpen(false)}
-      />
+      <LoyaltyDrawer isOpen={isLoyaltyOpen} onClose={() => setIsLoyaltyOpen(false)} />
 
-      <ReviewModal
-        isOpen={isReviewOpen}
-        onClose={() => setIsReviewOpen(false)}
-      />
+      <ReviewModal isOpen={isReviewOpen} onClose={() => setIsReviewOpen(false)} />
 
       <TableSelectorModal
         isOpen={isTableSelectorOpen}
