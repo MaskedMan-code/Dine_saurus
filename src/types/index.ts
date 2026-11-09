@@ -37,6 +37,7 @@ export interface MenuItem {
   name: string;
   description: string;
   price: number;
+  basePrice?: number;
   currency: string;
   imageUrl: string;
   isVegetarian?: boolean;
@@ -46,6 +47,8 @@ export interface MenuItem {
   isBestseller?: boolean;
   isNew?: boolean;
   isSoldOut?: boolean;
+  /** Publication status is independent of temporary stock at a location. */
+  isActive?: boolean;
   preparationTimeMinutes?: number;
   calories?: number;
   modifierGroups?: ModifierGroup[];

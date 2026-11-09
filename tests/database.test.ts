@@ -5,7 +5,15 @@ import { beforeAll, afterAll, expect, test } from 'vitest';
 import { randomUUID } from 'node:crypto';
 
 let db: PGlite;
-const migration = readFileSync('supabase/migrations/20261109125008_v3_stabilization.sql', 'utf8');
+const baseMigration = readFileSync(
+  'supabase/migrations/20261109125008_v3_stabilization.sql',
+  'utf8',
+);
+const followupMigration = readFileSync(
+  'supabase/migrations/20261109191729_v3_menu_refresh_permissions.sql',
+  'utf8',
+);
+const migration = baseMigration + '\n' + followupMigration;
 const ownerA = randomUUID(),
   ownerB = randomUUID(),
   employee = randomUUID();
@@ -420,7 +428,19 @@ test('Realtime publication membership is enabled for orders and service requests
         "select tablename from pg_publication_tables where pubname='supabase_realtime' order by tablename",
       )
     ).rows,
-  ).toEqual([{ tablename: 'orders' }, { tablename: 'service_requests' }]);
+  ).toEqual(
+    [
+      'menu_categories',
+      'menu_item_location_settings',
+      'menu_item_modifier_groups',
+      'menu_items',
+      'modifier_groups',
+      'modifier_options',
+      'orders',
+      'restaurants',
+      'service_requests',
+    ].map((tablename) => ({ tablename })),
+  );
 });
 
 test('a new owner can atomically onboard tables with resolvable persisted QR codes', async () => {
@@ -454,5 +474,86 @@ test('a new owner can atomically onboard tables with resolvable persisted QR cod
       tokens.rows[0].public_token,
     ]);
     expect(resolved.rows[0].restaurant_id).toBe(result.rows[0].result.restaurant_id);
+  });
+});
+
+test('live helper ACL reproduces the legacy service error; ordered migrations repair it without public access', async () => {
+  const legacy = await PGlite.create();
+  try {
+    await legacy.exec(
+      'set check_function_bodies=off;' +
+        readFileSync('tests/fixtures/schema-before-v3.sql', 'utf8'),
+    );
+    await legacy.exec(readFileSync('tests/fixtures/triggers-before-v3.sql', 'utf8'));
+    const id = randomUUID();
+    await legacy.query(
+      'insert into auth.users(id,email,raw_user_meta_data) values($1,\'legacy@example.test\',\'{"role":"staff","organization_name":"Legacy demo"}\')',
+      [id],
+    );
+    const member = await legacy.query<any>(
+      'select organization_id from public.organization_members where user_id=$1',
+      [id],
+    );
+    const org = member.rows[0].organization_id;
+    const rest = await legacy.query<any>(
+      "insert into public.restaurants(organization_id,name,slug,status) values($1,'Legacy demo','legacy','active') returning id",
+      [org],
+    );
+    const location = await legacy.query<any>(
+      "insert into public.restaurant_locations(organization_id,restaurant_id,name,country_code,timezone,currency) values($1,$2,'Main','IN','Asia/Kolkata','INR') returning id",
+      [org, rest.rows[0].id],
+    );
+    await legacy.query(
+      "insert into public.service_requests(location_id,request_type) values($1,'need_water')",
+      [location.rows[0].id],
+    );
+    await legacy.exec('set role authenticated');
+    await legacy.query("select set_config('request.jwt.claim.sub',$1,false)", [id]);
+    await expect(legacy.query('select * from public.service_requests')).rejects.toThrow(
+      /permission denied for function current_customer_id/i,
+    );
+    await legacy.exec('reset role');
+    await expect(legacy.exec(followupMigration)).rejects.toThrow(/Apply .* first.*missing/i);
+    await legacy.exec('rollback');
+    await legacy.exec(migration);
+    await legacy.exec('set role authenticated');
+    await legacy.query("select set_config('request.jwt.claim.sub',$1,false)", [id]);
+    expect((await legacy.query('select * from public.service_requests')).rows).toHaveLength(1);
+    expect(
+      (await legacy.query<any>('select public.current_customer_id() as id')).rows[0].id,
+    ).toBeNull();
+    await legacy.exec('reset role;set role anon');
+    await expect(legacy.query('select public.current_customer_id()')).rejects.toThrow(
+      /permission denied/i,
+    );
+    await expect(legacy.query('select * from public.service_requests')).rejects.toThrow(
+      /permission denied/i,
+    );
+  } finally {
+    await legacy.close();
+  }
+});
+test('authenticated customer helper is caller-bound and service reads remain tenant-isolated', async () => {
+  const a = await db.query<any>(
+    "insert into public.customers(organization_id,auth_user_id,name) values($1,$2,'Claimed A') returning id",
+    [orgA, ownerA],
+  );
+  const b = await db.query<any>(
+    "insert into public.customers(organization_id,auth_user_id,name) values($1,$2,'Claimed B') returning id",
+    [orgB, ownerB],
+  );
+  await asRole('authenticated', ownerA, async () => {
+    expect((await db.query<any>('select public.current_customer_id() as id')).rows[0].id).toBe(
+      a.rows[0].id,
+    );
+    expect((await db.query('select * from public.service_requests')).rows.length).toBeGreaterThan(
+      0,
+    );
+  });
+  await asRole('authenticated', ownerB, async () => {
+    expect((await db.query<any>('select public.current_customer_id() as id')).rows[0].id).toBe(
+      b.rows[0].id,
+    );
+    expect((await db.query('select * from public.service_requests')).rows).toHaveLength(0);
   });
 });

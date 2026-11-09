@@ -52,13 +52,51 @@ const makeOrder = (f = fixtures()) => ({
   ],
   order_status_events: [{ to_status: 'pending', created_at: new Date().toISOString() }],
 });
-async function backend(page: Page, options: { failOrder?: boolean; emptyOrg?: boolean } = {}) {
+type CatalogEvent = { table: string; record: any };
+function createMenuState() {
+  return {
+    items: Object.fromEntries(
+      ['A', 'B'].map((tenant) => {
+        const f = fixtures(tenant);
+        return [
+          tenant,
+          {
+            id: f.item,
+            restaurant_id: f.rest,
+            category_id: f.category,
+            name: `Soup ${tenant}`,
+            short_description: 'Fresh soup',
+            base_price: 100,
+            currency: 'INR',
+            active: true,
+            featured: false,
+          },
+        ];
+      }),
+    ),
+    stock: {} as Record<string, any>,
+    listeners: new Set<(event: CatalogEvent) => void>(),
+  };
+}
+async function backend(
+  page: Page,
+  options: {
+    failOrder?: boolean;
+    emptyOrg?: boolean;
+    missingOrderRpc?: boolean;
+    failStock?: boolean;
+    menuState?: ReturnType<typeof createMenuState>;
+  } = {},
+) {
+  const menu = options.menuState ?? createMenuState();
+  const notify = (table: string, record: any) =>
+    menu.listeners.forEach((listener) => listener({ table, record }));
   let order: any = null;
   let orderCalls = 0;
   const requests: string[] = [];
   const extraTables: any[] = [];
   const extraQrs: any[] = [];
-  const channels = new Map<string, { socket: any; joinRef: any }>();
+  const channels = new Map<string, { socket: any; joinRef: any; filters: any[] }>();
   await page.route(`${project}/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -113,6 +151,8 @@ async function backend(page: Page, options: { failOrder?: boolean; emptyOrg?: bo
     }
     if (path === '/rest/v1/rpc/place_qr_order_idempotent') {
       orderCalls++;
+      if (options.missingOrderRpc)
+        return json({ code: 'PGRST202', message: 'place_qr_order_idempotent was not found' }, 404);
       if (options.failOrder)
         return json(
           { message: 'A menu item is unavailable. Update your cart.', code: 'P0001' },
@@ -129,6 +169,27 @@ async function backend(page: Page, options: { failOrder?: boolean; emptyOrg?: bo
       return json({ order_id: order.id, status: order.status });
     }
     const resource = path.split('/').pop();
+    if (resource === 'menu_items' && request.method() === 'PATCH') {
+      const item = Object.values(menu.items).find(
+        (row) => row.id === url.searchParams.get('id')?.slice(3),
+      );
+      if (!item) return json({ message: 'Item not found' }, 404);
+      Object.assign(item, body);
+      notify('menu_items', item);
+      return json(item);
+    }
+    if (resource === 'menu_item_location_settings' && request.method() === 'POST') {
+      if (options.failStock) return json({ code: '42501', message: 'Stock write denied' }, 403);
+      const row = {
+        available: true,
+        price_override: null,
+        ...menu.stock[body.location_id],
+        ...body,
+      };
+      menu.stock[body.location_id] = row;
+      notify('menu_item_location_settings', row);
+      return json(row);
+    }
     if (request.method() === 'POST' && resource === 'restaurant_tables') {
       const row = { ...body[0], id: '00000000-0000-4000-8001-000000000088', active: true };
       extraTables.push(row);
@@ -208,20 +269,9 @@ async function backend(page: Page, options: { failOrder?: boolean; emptyOrg?: bo
       rows = [
         { id: f.category, restaurant_id: f.rest, name: 'Mains', sort_order: 0, active: true },
       ];
-    if (resource === 'menu_items')
-      rows = [
-        {
-          id: f.item,
-          restaurant_id: f.rest,
-          category_id: f.category,
-          name: `Soup ${f.tenant}`,
-          short_description: 'Fresh soup',
-          base_price: 100,
-          currency: 'INR',
-          active: true,
-          featured: false,
-        },
-      ];
+    if (resource === 'menu_items') rows = [menu.items[f.tenant]];
+    if (resource === 'menu_item_location_settings')
+      rows = menu.stock[f.location] ? [menu.stock[f.location]] : [];
     if (resource === 'orders') rows = order ? [order] : [];
     if (resource === 'organizations') rows = [{ id: f.org, join_code: 'TEST00' }];
     if (request.method() === 'HEAD')
@@ -241,10 +291,10 @@ async function backend(page: Page, options: { failOrder?: boolean; emptyOrg?: bo
       const frame = JSON.parse(message.toString());
       const [joinRef, ref, topic, event, payload] = frame;
       if (event === 'phx_join') {
-        channels.set(topic, { socket, joinRef });
         const filters = (payload.config?.postgres_changes ?? []).map(
           (filter: any, index: number) => ({ ...filter, id: index + 1 }),
         );
+        channels.set(topic, { socket, joinRef, filters });
         socket.send(
           JSON.stringify([
             joinRef,
@@ -265,7 +315,45 @@ async function backend(page: Page, options: { failOrder?: boolean; emptyOrg?: bo
         );
     });
   });
+  menu.listeners.add((event) => {
+    for (const [topic, channel] of channels) {
+      const ids = channel.filters
+        .filter((filter) => {
+          if (filter.table !== event.table) return false;
+          if (!filter.filter) return true;
+          const [key, expected] = filter.filter.split('=eq.');
+          return event.record[key] === expected;
+        })
+        .map((filter) => filter.id);
+      if (ids.length)
+        channel.socket.send(
+          JSON.stringify([
+            channel.joinRef,
+            null,
+            topic,
+            'postgres_changes',
+            {
+              ids,
+              data: {
+                type: 'UPDATE',
+                schema: 'public',
+                table: event.table,
+                commit_timestamp: new Date().toISOString(),
+                columns: [],
+                record: event.record,
+                old_record: {},
+                errors: null,
+              },
+            },
+          ]),
+        );
+    }
+  });
   return {
+    changeMenu(tenant: string, patch: Record<string, unknown>, emit = true) {
+      Object.assign(menu.items[tenant], patch);
+      if (emit) notify('menu_items', menu.items[tenant]);
+    },
     requests,
     get orderCalls() {
       return orderCalls;
@@ -457,4 +545,100 @@ test('owner can sign out and sign back in', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Restaurant team sign in' })).toBeVisible();
   await login(page);
   await expect(page.getByText('Restaurant A', { exact: true }).first()).toBeVisible();
+});
+
+test('Edit Item stock changes reach an open guest cart and menu without a reload', async ({
+  page,
+  browser,
+}) => {
+  const state = createMenuState();
+  await backend(page, { menuState: state });
+  await page.goto('/?view=menu');
+  await login(page);
+  await expect(page.getByTitle('Edit Item')).toBeVisible();
+  const guestContext = await browser.newContext({
+    viewport: page.viewportSize()!,
+    isMobile: test.info().project.name === 'mobile',
+    hasTouch: test.info().project.name === 'mobile',
+  });
+  try {
+    const guest = await guestContext.newPage();
+    const guestApi = await backend(guest, { menuState: state });
+    await guest.goto(`/?view=customer&table=${fixtures().token}`);
+    await addSoup(guest);
+    await guest.getByLabel('Full name (required)').fill('Persistent Diner');
+    const timeOrigin = await guest.evaluate(() => performance.timeOrigin);
+    await page.getByTitle('Edit Item').click();
+    await page.getByLabel('Mark as Sold Out (86)').check();
+    await page.getByRole('button', { name: 'Save Item', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Sold Out (86)', exact: true })).toBeVisible();
+    await expect(guest.getByText('Sold Out', { exact: true })).toHaveCount(1);
+    await expect(guest.getByRole('dialog', { name: 'Checkout & Order' })).toBeVisible();
+    await expect(guest.getByLabel('Full name (required)')).toHaveValue('Persistent Diner');
+    await guest.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(guest.getByText('Sold Out', { exact: true })).toBeVisible();
+    await page.getByTitle('Edit Item').click();
+    await page.getByLabel('Mark as Sold Out (86)').uncheck();
+    await page.getByRole('button', { name: 'Save Item', exact: true }).click();
+    await expect(guest.getByText('Sold Out', { exact: true })).toHaveCount(0);
+    guestApi.changeMenu('A', { name: 'Soup Updated', base_price: 125 });
+    await expect(guest.getByText('Soup Updated', { exact: true }).first()).toBeVisible();
+    await expect(guest.getByText('\u20b9125.00', { exact: true }).first()).toBeVisible();
+    expect(await guest.evaluate(() => performance.timeOrigin)).toBe(timeOrigin);
+    expect(guestApi.requests.filter((path) => path.endsWith('/profiles'))).toHaveLength(0);
+  } finally {
+    await guestContext.close();
+  }
+});
+test('guest menu polling removes unpublished items even when no Realtime event is delivered', async ({
+  page,
+}) => {
+  await page.clock.install();
+  const api = await backend(page);
+  await page.goto(`/?view=customer&table=${fixtures().token}`);
+  await expect(page.getByText('Soup A', { exact: true })).toBeVisible();
+  api.changeMenu('A', { active: false }, false);
+  await page.clock.runFor(15300);
+  await expect(page.getByText('Soup A', { exact: true })).toHaveCount(0);
+});
+test('checkout scrolls its details at small viewport heights while keeping payment and close controls reachable', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 480 });
+  await backend(page);
+  await page.goto(`/?view=customer&table=${fixtures().token}`);
+  await addSoup(page);
+  const dialog = page.getByRole('dialog', { name: 'Checkout & Order' });
+  const details = dialog.getByRole('region', { name: 'Checkout details' });
+  await expect(dialog).toBeVisible();
+  expect(await details.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  const backgroundY = await page.evaluate(() => scrollY);
+  await details.hover();
+  await page.mouse.wheel(0, 1000);
+  await expect.poll(() => details.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect(dialog.getByText('Total Amount', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /Place Order/ })).toBeInViewport();
+  await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
+  expect(await page.evaluate(() => scrollY)).toBe(backgroundY);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+});
+test('an undeployed order RPC keeps the cart and offers an honest restaurant-setup error', async ({
+  page,
+}) => {
+  const api = await backend(page, { missingOrderRpc: true });
+  await page.goto(`/?view=customer&table=${fixtures().token}`);
+  await addSoup(page);
+  await page.getByLabel('Full name (required)').fill('Test Diner');
+  await page.getByLabel('Mobile number (required)').fill('+919000000001');
+  await page.getByRole('button', { name: /Place Order/ }).click();
+  await expect(page.getByRole('alert')).toHaveText(/awaiting the V3 database update/);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Retry order/ })).toBeEnabled();
+  expect(api.orderCalls).toBe(1);
+  expect(
+    api.requests
+      .filter((path) => path.includes('/rpc/place_qr_order'))
+      .every((path) => path.endsWith('/place_qr_order_idempotent')),
+  ).toBe(true);
 });

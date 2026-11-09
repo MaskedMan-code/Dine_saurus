@@ -2,13 +2,19 @@
 
 ## Current state
 
-The live project was inspected read-only on 9 November 2026. It still has the original functions,
-grants and policies. The changes below exist only in
-[`20261109125008_v3_stabilization.sql`](../supabase/migrations/20261109125008_v3_stabilization.sql).
-They were executed against local PostgreSQL through PGlite with schema-only fixtures and
-synthetic data. Managed Supabase deployment and concurrent connections remain unverified.
+The live project was inspected read-only during stabilization and the manual-test follow-up.
+It still lacks `place_qr_order_idempotent`, and `current_customer_id` lacks authenticated EXECUTE.
+The changes below exist only in these ordered migrations:
 
-Do not automatically run this migration against production. It depends on the inspected
+1. [`20261109125008_v3_stabilization.sql`](../supabase/migrations/20261109125008_v3_stabilization.sql)
+2. [`20261109191729_v3_menu_refresh_permissions.sql`](../supabase/migrations/20261109191729_v3_menu_refresh_permissions.sql)
+
+Both were executed against local PostgreSQL through PGlite with schema-only fixtures and
+synthetic data. The follow-up refuses to commit without the first migration's ordering RPC.
+Managed Supabase deployment and concurrent connections remain unverified. See the
+[follow-up report](V3_FOLLOWUP.md) for the reproduced permission failure and frontend repairs.
+
+Do not automatically run these migrations against production. They depend on the inspected
 existing schema, not a blank project. `supabase_phase1_phase2_migration.sql` is historical and
 is not a substitute for the complete schema.
 
@@ -86,6 +92,12 @@ location, removes it on boundary changes, refetches after reconnect and polls ev
 while visible as a fallback. Guest tracking uses nonoverlapping 5-second polling (15 seconds
 when hidden), stops at terminal states and cleans up its timer.
 
+The follow-up also adds the public catalog tables to the publication without widening their
+SELECT policies. Public QR menus use a separate restaurant/location-filtered catalog channel,
+coalesce events, refresh on subscription/reconnect and visibility restoration, and poll every
+15 seconds while visible. Polling covers missing publication setup, deletions and rows that lose
+public RLS visibility. Cart contents and diner inputs survive background refreshes.
+
 ## Staging and production procedure
 
 1. Obtain an isolated development Supabase project or sanitized schema clone. Keep service keys
@@ -93,8 +105,9 @@ when hidden), stops at terminal states and cleans up its timer.
 2. Export the target schema, function definitions, policies, grants and relevant data using an
    approved database backup process. Compare the target with this branch's inspected schema.
    In particular verify function signatures, enum values, phone constraints and existing RLS.
-3. Apply the V3 SQL to that development database. The file is transactional and re-runnable for
-   the inspected schema. It deliberately retains existing restaurant/user/order rows and tokens.
+3. Apply both migrations in the order listed above to that development database. Each file is
+   transactional and re-runnable for the inspected schema. They deliberately retain existing
+   restaurant/user/order rows and tokens. The follow-up requests a PostgREST schema-cache reload.
 4. Verify Data API grants, new RPC discovery, advisor output and Realtime publication membership.
    Exercise the entire [demo acceptance run](RESTAURANT_DEMO_GUIDE.md) with at least two tenants
    and separate browser/device sessions. Test simultaneous retries with multiple connections.

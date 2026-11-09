@@ -82,3 +82,19 @@ test('repeated clicks make one submission and success waits for server confirmat
   await waitFor(() => expect(placed).toHaveBeenCalledWith('confirmed'));
   expect(mock.createOrder.mock.calls[0][0].tipAmount).toBe(0);
 });
+test('checkout contains its own scroll region and restores page scrolling on close or unmount', () => {
+  document.body.style.overflow = 'auto';
+  const view = render(<CheckoutDrawer isOpen onClose={vi.fn()} onOrderPlaced={vi.fn()} />);
+  expect(document.body.style.overflow).toBe('hidden');
+  expect(screen.getByRole('dialog', { name: 'Checkout & Order' })).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Checkout details' })).toHaveClass(
+    'min-h-0',
+    'overflow-y-auto',
+  );
+  view.rerender(<CheckoutDrawer isOpen={false} onClose={vi.fn()} onOrderPlaced={vi.fn()} />);
+  expect(document.body.style.overflow).toBe('auto');
+  view.rerender(<CheckoutDrawer isOpen onClose={vi.fn()} onOrderPlaced={vi.fn()} />);
+  view.unmount();
+  expect(document.body.style.overflow).toBe('auto');
+  document.body.style.overflow = '';
+});

@@ -60,9 +60,11 @@ The historical `supabase_phase1_phase2_migration.sql` is retained as reference; 
 fresh-project bootstrap and does not match every live function. Do not rerun it on production.
 
 Review [the V3 migration](supabase/migrations/20261109125008_v3_stabilization.sql) and
-[security/deployment instructions](docs/SUPABASE_SECURITY.md). This migration targets the schema
-inspected on 9 November 2026. The tests use schema-only fixtures with synthetic records, never
-production rows. No production accounts, orders, policies or migrations were changed.
+[the permissions/catalog follow-up](supabase/migrations/20261109191729_v3_menu_refresh_permissions.sql),
+in that order, with the [security/deployment instructions](docs/SUPABASE_SECURITY.md).
+The SQL targets the inspected existing schema. The tests use schema-only fixtures with synthetic
+records, never production rows. No production accounts, orders, policies or migrations were changed.
+Guest ordering and service-request permissions still require the approved database deployment.
 
 ## Verification
 
@@ -83,6 +85,7 @@ physical-device scanning, real account sign-in or concurrent-client staging test
 
 - [Audit and remaining risks](docs/V3_AUDIT.md)
 - [Repairs and file map](docs/V3_FIXES.md)
+- [Manual-test follow-up fixes and database rollout](docs/V3_FOLLOWUP.md)
 - [Supabase security, migration and rollback](docs/SUPABASE_SECURITY.md)
 - [OTP-free onboarding and trusted provisioning design](docs/OTP_FREE_ONBOARDING.md)
 - [Test setup, results and limits](docs/TESTING.md)

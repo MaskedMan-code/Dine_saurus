@@ -30,6 +30,17 @@ test('in-flight order calls share one request', async () => {
   await Promise.all([submit({ a: 1 }), submit({ a: 1 })]);
   expect(rpc).toHaveBeenCalledTimes(1);
 });
+test('missing idempotent RPC preserves a retryable intent and never falls back to legacy ordering', async () => {
+  const rpc = vi
+    .fn()
+    .mockResolvedValueOnce({ data: null, error: { code: 'PGRST202', message: 'Function missing' } })
+    .mockResolvedValueOnce({ data: { order: { id: 'confirmed' } }, error: null });
+  const submit = createOrderSubmitter({ rpc } as any, 'missing-rpc');
+  await expect(submit({ p_items: [1] })).rejects.toThrow(/V3 database update/);
+  await expect(submit({ p_items: [1] })).resolves.toEqual({ id: 'confirmed' });
+  expect(rpc.mock.calls.every((call) => call[0] === 'place_qr_order_idempotent')).toBe(true);
+  expect(rpc.mock.calls[0][1].p_idempotency_key).toBe(rpc.mock.calls[1][1].p_idempotency_key);
+});
 test('a deliberate identical repeat order has a fresh key when its cart identity changes', async () => {
   const rpc = vi.fn().mockResolvedValue({ data: { order: { id: 'one' } }, error: null });
   const submit = createOrderSubmitter({ rpc } as any, 'tenant');

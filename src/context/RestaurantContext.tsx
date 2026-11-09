@@ -38,6 +38,8 @@ import {
 import { createTableWithQr } from '../lib/tables';
 import { diagnostic } from '../lib/diagnostics';
 import { orderTotals } from '../lib/money';
+import { saveMenuStock } from '../lib/menuStock';
+import { useCatalogRefresh } from '../lib/useCatalogRefresh';
 import { useAuth } from './AuthContext';
 import { useTenant } from './TenantContext';
 import {
@@ -301,7 +303,21 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
   };
   const [dataError, setDataError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
-  const retryLoad = useCallback(() => setReloadTick((t) => t + 1), []);
+  const catalogInFlight = useRef(false);
+  const catalogRefreshQueued = useRef(false);
+  const retryLoad = useCallback(() => {
+    if (catalogInFlight.current) {
+      catalogRefreshQueued.current = true;
+      return;
+    }
+    setReloadTick((t) => t + 1);
+  }, []);
+  useCatalogRefresh(
+    activeRestaurantId,
+    tenantLocationId,
+    source !== 'staff-org' && !tenantLoading,
+    retryLoad,
+  );
 
   const tablesRef = useRef<RestaurantTable[]>([]);
   const areasRef = useRef<RestaurantArea[]>([]);
@@ -338,6 +354,7 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
         return;
       }
 
+      catalogInFlight.current = true;
       setDataLoading(!loadedCatalog.current);
       setDataRefreshing(loadedCatalog.current);
       setDataError(null);
@@ -440,8 +457,13 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
               ),
             ),
         );
-        setCategories((catRows || []).map(mapCategory));
-        if ((catRows || []).length > 0) setSelectedCategory((prev) => prev || catRows![0].id);
+        const visibleCategories = (catRows || []).filter((row: any) => staffOrgId || row.active);
+        setCategories(visibleCategories.map(mapCategory));
+        setSelectedCategory((prev) =>
+          visibleCategories.some((row: any) => row.id === prev)
+            ? prev
+            : visibleCategories[0]?.id || '',
+        );
 
         const optionsByGroup = (optionRows || []).reduce((acc: any, o: any) => {
           (acc[o.modifier_group_id] = acc[o.modifier_group_id] || []).push(o);
@@ -459,9 +481,9 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
           acc[row.menu_item_id] = row;
           return acc;
         }, {});
-        const mappedItems = (itemRows || []).map((it: any) =>
-          mapMenuItem(it, groupsByItem[it.id] || [], settingsByItem[it.id]),
-        );
+        const mappedItems = (itemRows || [])
+          .filter((row: any) => staffOrgId || row.active)
+          .map((it: any) => mapMenuItem(it, groupsByItem[it.id] || [], settingsByItem[it.id]));
         setMenuItems(mappedItems);
         // Reconcile display prices after a catalog refresh; the server still validates every order.
         setCart((prev) =>
@@ -503,12 +525,22 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
           setDataError(err?.message || 'Failed to load restaurant data');
           setDataLoading(false);
         }
+      } finally {
+        if (!cancelled) {
+          catalogInFlight.current = false;
+          if (catalogRefreshQueued.current) {
+            catalogRefreshQueued.current = false;
+            setReloadTick((t) => t + 1);
+          }
+        }
       }
     }
 
     load();
     return () => {
       cancelled = true;
+      catalogInFlight.current = false;
+      catalogRefreshQueued.current = false;
     };
   }, [
     activeRestaurantId,
@@ -584,7 +616,11 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
       .order('created_at', { ascending: false });
     if (!aliveRef.current || request !== serviceRequest.current) return;
     if (error) {
-      setMutationError(`Service requests could not refresh: ${error.message}`);
+      setMutationError(
+        /permission denied for function current_customer_id/i.test(error.message)
+          ? 'Service requests need a database permissions update. Ask your administrator to apply the reviewed V3 migrations.'
+          : `Service requests could not refresh: ${error.message}`,
+      );
       return;
     }
     setServiceRequests(
@@ -1040,19 +1076,17 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
       assertStaff();
       const item = menuItems.find((i) => i.id === itemId);
       if (!item) throw new Error('Menu item not found.');
-      const row = requireRow(
-        await supabase
-          .from('menu_item_location_settings')
-          .upsert(
-            { menu_item_id: itemId, location_id: tenantLocationId, sold_out: !item.isSoldOut },
-            { onConflict: 'menu_item_id,location_id' },
-          )
-          .select()
-          .single(),
-      );
+      const row = await saveMenuStock(supabase, itemId, tenantLocationId || '', !item.isSoldOut);
       if (aliveRef.current)
         setMenuItems((prev) =>
-          prev.map((i) => (i.id === itemId ? { ...i, isSoldOut: row.sold_out } : i)),
+          prev.map((i) =>
+            i.id === itemId
+              ? {
+                  ...i,
+                  isSoldOut: i.isActive === false || row.available === false || !!row.sold_out,
+                }
+              : i,
+          ),
         );
     });
   const saveMenuItem = (item: MenuItem) =>
@@ -1068,14 +1102,17 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
         name: item.name.trim(),
         short_description: item.description,
         image_path: item.imageUrl,
-        base_price: item.price,
+        base_price:
+          existing && item.price === existing.price
+            ? (existing.basePrice ?? item.price)
+            : item.price,
         vegetarian: !!item.isVegetarian,
         vegan: !!item.isVegan,
         gluten_free: !!item.isGlutenFree,
         featured: !!item.isFeatured,
-        active: existing ? undefined : !item.isSoldOut,
+        active: existing ? existing.isActive : true,
       };
-      const row = requireRow(
+      let row = requireRow(
         existing
           ? await supabase
               .from('menu_items')
@@ -1089,6 +1126,7 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
               .insert([
                 {
                   ...payload,
+                  active: false,
                   restaurant_id: restaurant.id,
                   currency:
                     restaurant.locations.find((l) => l.id === tenantLocationId)?.currency ??
@@ -1098,8 +1136,39 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
               .select()
               .single(),
       );
+      let stockRow;
+      try {
+        stockRow = await saveMenuStock(supabase, row.id, tenantLocationId || '', !!item.isSoldOut);
+        if (!existing) {
+          row = requireRow(
+            await supabase
+              .from('menu_items')
+              .update({ active: true })
+              .eq('id', row.id)
+              .eq('restaurant_id', restaurant.id)
+              .select()
+              .single(),
+          );
+        }
+      } catch (error) {
+        // Existing details may have saved; reconcile them and keep the editor open.
+        // A new item must not be left falsely advertised in stock after its stock write fails.
+        if (!existing) {
+          const cleanup = await supabase.from('menu_items').delete().eq('id', row.id).select('id');
+          if (cleanup.error || !cleanup.data?.length) {
+            retryLoad();
+            throw new Error(
+              'Stock could not be confirmed and the item may exist. Reload the menu before creating it again.',
+            );
+          }
+        }
+        retryLoad();
+        throw new Error(
+          `Item availability was not saved: ${error instanceof Error ? error.message : 'Please retry.'}`,
+        );
+      }
       if (aliveRef.current) {
-        const mapped = mapMenuItem(row, existing?.modifierGroups ?? []);
+        const mapped = mapMenuItem(row, existing?.modifierGroups ?? [], stockRow);
         setMenuItems((prev) =>
           existing ? prev.map((i) => (i.id === existing.id ? mapped : i)) : [...prev, mapped],
         );

@@ -32,3 +32,6 @@ CREATE TRIGGER lock_org_id BEFORE UPDATE ON public.restaurant_locations FOR EACH
 CREATE TRIGGER lock_org_id BEFORE UPDATE ON public.orders FOR EACH ROW EXECUTE FUNCTION prevent_org_id_change();
 create trigger test_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
 set check_function_bodies=on;
+-- Match the inspected live ACL; default PUBLIC execution hid this failure in the original tests.
+revoke all on function public.current_customer_id() from public,anon,authenticated;
+grant execute on function public.current_customer_id() to service_role;

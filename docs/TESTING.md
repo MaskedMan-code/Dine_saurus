@@ -14,16 +14,17 @@ npm.cmd run test:browser
 npm.cmd audit --json --cache .cache/npm
 ```
 
-Final results from the actual release checks on 9 November 2026 are recorded below. Tests are self-contained and do not
-need a real project key or production credentials.
+Results include the manual-test follow-up checks on 10 November 2026. Install/audit results
+remain from 9 November; those commands were not repeated for the follow-up. Tests are
+self-contained and do not need a real project key or production credentials.
 
 | Check                                      | Final result                                                   |
 | ------------------------------------------ | -------------------------------------------------------------- |
 | Clean lockfile install                     | Passed; 325 packages installed, zero audit findings at install |
 | TypeScript + React hook lint               | Passed; no errors or warnings                                  |
-| Vitest component/unit/Postgres regressions | Passed; 39 tests across 4 files                                |
-| Vite production build                      | Passed; nonblocking 708.26 kB bundle warning (190.38 kB gzip)  |
-| Playwright desktop/mobile                  | Passed; 18 tests (9 workflows x 2 viewports), 31.1 seconds     |
+| Vitest component/unit/Postgres regressions | Passed; 53 tests across 6 files                                |
+| Vite production build                      | Passed; nonblocking 711.01 kB bundle warning (191.22 kB gzip)  |
+| Playwright desktop/mobile                  | Passed; 26 tests (13 workflows x 2 viewports), 50.1 seconds    |
 | Dependency audit                           | Passed; 0 vulnerabilities, including development dependencies  |
 
 An initial install failed because a running Windows process locked a native dependency. Its
@@ -46,6 +47,12 @@ privacy/expiry, protected order writes, assigned employee status, role/owner saf
 parent consistency, settings authorization, onboarding retry rejection, service limits and
 Realtime publication metadata.
 
+The follow-up fixture reproduces the live helper's restricted ACL rather than inheriting
+PostgreSQL's default PUBLIC EXECUTE. Tests first reproduce the authenticated service-read
+failure, then apply both migrations and verify location/customer isolation, anonymous denial,
+caller-bound helper results and catalog publication membership. Applying only the follow-up
+fails and rolls back when the checkout RPC prerequisite is missing.
+
 PGlite does not run Supabase Auth/GoTrue, PostgREST, a logical-replication server or multiple
 concurrent client connections. This is real SQL execution, not a managed Supabase integration
 test. Do not use the test fixture as a production migration or full application bootstrap.
@@ -60,6 +67,12 @@ test. Do not use the test fixture as a production migration or full application 
 - Persisted QR readback and compensation on failed QR insert.
 - Idempotency across uncertain retries, distinct intentional repeat orders, protection against
   replacing an uncertain request, tracking scoping/expiry and independent monetary rounding.
+- Editor/quick-action location stock parity, preservation of price overrides and publication,
+  failed writes and unpublished new-item cleanup; coalesced in-flight catalog refreshes.
+- Filtered catalog subscriptions, hidden-page polling, reconnect/visibility refresh and
+  StrictMode/tenant-change cleanup; checkout scroll region and body-lock restoration.
+- A missing ordering RPC retains the idempotent intent for retry after deployment and never
+  calls the legacy ordering endpoint.
 
 `npm run lint` includes actual React `rules-of-hooks` and dependency lint, not only TypeScript.
 StrictMode and Supabase automatic refresh remain enabled.
@@ -83,6 +96,12 @@ that physical camera scanning or printed readability has been tested.
 Failure traces and layout screenshots are written under ignored `test-results/`. Only synthetic
 fixture details appear in those artifacts. Customer-menu tests also check document overflow at
 both viewport sizes.
+
+The follow-up adds two-session editor-to-guest stock/name/price updates with an open cart,
+unpublished-item polling without an event, actual scrolling at a 390 x 480 viewport, and a
+missing-RPC checkout error. Guest inputs/cart survive refreshes; checkout controls remain
+reachable and the page behind it stays locked. These use mocked HTTP/websockets, not the
+production database or managed Realtime service.
 
 ## Required managed staging acceptance
 
