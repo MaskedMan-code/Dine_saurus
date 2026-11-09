@@ -1,0 +1,6 @@
+{
+  "name": "Dine_saurus",
+  "description": "Multi-tenant Restaurant SaaS & QR table ordering OS with Nordic design system, live kitchen & POS dashboards, and Supabase integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
