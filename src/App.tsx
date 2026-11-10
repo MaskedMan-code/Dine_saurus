@@ -18,6 +18,10 @@ import { StaffAuthGate } from './components/auth/StaffAuthGate';
 import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { supabaseConfigError } from './lib/supabase';
 import { Loader2, AlertTriangle, ServerCrash } from 'lucide-react';
+import { OperatorGate } from './components/auth/OperatorGate';
+import { PlatformAdminView } from './components/admin/PlatformAdminView';
+import { useRouteView } from './lib/route';
+import { NetworkStatus } from './components/layout/NetworkStatus';
 
 const ConfigErrorScreen: React.FC<{ message: string }> = ({ message }) => (
   <div className="min-h-screen flex items-center justify-center bg-[#0f241e] px-4">
@@ -88,75 +92,57 @@ const MainContent: React.FC = () => {
         );
       case 'kds':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <KitchenView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <KitchenView />
+          </StaffShell>
         );
       case 'pos':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <POSView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <POSView />
+          </StaffShell>
         );
       case 'tables':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <TablesFloorView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <TablesFloorView />
+          </StaffShell>
         );
       case 'menu':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <MenuAdminView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <MenuAdminView />
+          </StaffShell>
         );
       case 'service_desk':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <ServiceDeskView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <ServiceDeskView />
+          </StaffShell>
         );
       case 'analytics':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <AnalyticsView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <AnalyticsView />
+          </StaffShell>
         );
       case 'loyalty_admin':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <LoyaltyAdminView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <LoyaltyAdminView />
+          </StaffShell>
         );
       case 'settings':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <SettingsView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <SettingsView />
+          </StaffShell>
         );
       case 'admin_users':
         return (
-          <StaffAuthGate>
-            <StaffShell>
-              <AdminUsersView />
-            </StaffShell>
-          </StaffAuthGate>
+          <StaffShell>
+            <AdminUsersView />
+          </StaffShell>
         );
       default:
         return (
@@ -228,11 +214,34 @@ export default function App() {
   }
   return (
     <AuthProvider>
-      <TenantProvider>
-        <RestaurantProvider>
-          <MainContent />
-        </RestaurantProvider>
-      </TenantProvider>
+      <NetworkStatus />
+      <AppRoutes />
     </AuthProvider>
+  );
+}
+
+function AppRoutes() {
+  const { viewMode } = useRouteView();
+  if (viewMode === 'platform_admin')
+    return (
+      <StaffAuthGate platform>
+        <OperatorGate platform>
+          <PlatformAdminView />
+        </OperatorGate>
+      </StaffAuthGate>
+    );
+  const content = (
+    <TenantProvider>
+      <RestaurantProvider>
+        <MainContent />
+      </RestaurantProvider>
+    </TenantProvider>
+  );
+  return viewMode === 'customer' ? (
+    content
+  ) : (
+    <StaffAuthGate>
+      <OperatorGate>{content}</OperatorGate>
+    </StaffAuthGate>
   );
 }

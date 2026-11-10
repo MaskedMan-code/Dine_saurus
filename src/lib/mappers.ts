@@ -13,8 +13,10 @@ import {
   ServiceRequest,
   Review,
 } from '../types';
+import { locationHours } from './hours';
 
 export function mapLocation(l: any): RestaurantLocation {
+  const hours = locationHours(l.opening_hours, l.holiday_closures || [], l.timezone);
   return {
     id: l.id,
     restaurantId: l.restaurant_id,
@@ -24,8 +26,10 @@ export function mapLocation(l: any): RestaurantLocation {
     phone: l.phone || '',
     currency: l.currency,
     timezone: l.timezone,
-    isOpen: false,
-    openingHours: '11:00 AM – 11:00 PM',
+    isOpen: hours.open === true,
+    openingHours: hours.label,
+    openingSchedule: l.opening_hours || null,
+    holidayClosures: l.holiday_closures || [],
   };
 }
 

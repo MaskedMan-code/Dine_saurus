@@ -1,7 +1,7 @@
 -- Schema-only snapshot inspected 2026-11-09. No production rows. Test fixture, not a bootstrap migration.
 create schema auth; create schema private;
 create role anon; create role authenticated; create role service_role bypassrls;
-create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb);
+create table auth.users (id uuid primary key, email text, email_confirmed_at timestamptz default now(), encrypted_password text default 'synthetic-password-hash', raw_user_meta_data jsonb default '{}'::jsonb, raw_app_meta_data jsonb default '{}'::jsonb);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 grant usage on schema public,auth,private to anon,authenticated,service_role; grant execute on function auth.uid() to public;
 create type public.car_delivery_status as enum ('waiting','assigned','picked_up','on_the_way','delivered','cancelled');

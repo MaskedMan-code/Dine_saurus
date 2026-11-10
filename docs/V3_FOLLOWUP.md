@@ -1,5 +1,10 @@
 # Manual-test follow-up
 
+**Historical V3 report.** On 10 November 2026, read-only verification confirmed that both V3
+migrations had subsequently been deployed externally. The ordering RPC, helper permissions,
+service policies and catalog publication are present. New V3.1 rollout work is documented in
+[V3_1_DATABASE_MIGRATIONS.md](V3_1_DATABASE_MIGRATIONS.md).
+
 ## Frontend repairs
 
 - `src/lib/menuStock.ts` and `src/context/RestaurantContext.tsx`: Edit Item and the quick stock
@@ -52,6 +57,7 @@ and tested for reapplication against the inspected schema.
 4. Obtain explicit production approval before applying either migration. Coordinate the database
    and compatible frontend rollout, then repeat the acceptance checks and security advisors.
 
-Production guest ordering and service-request refresh remain blocked by the undeployed SQL.
+At this report's original cutoff, guest ordering and service-request refresh required deployment.
+That SQL is now present; real device/managed-service acceptance is still required.
 No merge to `main` is part of this work. See [SUPABASE_SECURITY.md](SUPABASE_SECURITY.md) for the
 full rollout and rollback procedure and [TESTING.md](TESTING.md) for results and limitations.

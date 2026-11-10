@@ -1,14 +1,18 @@
-# Dine_saurus V3
+# Dine_saurus V3.1 commercial pilot candidate
 
 Existing React 19 / TypeScript / Vite / Tailwind restaurant application with Supabase Auth,
 PostgreSQL, RLS, RPC ordering and Realtime. The V3 stabilization branch preserves the existing
 green, slate, terracotta and sage interface.
 
-**Release status: review and staging validation required.** Frontend repairs and automated
-local tests are implemented. The SQL migration has not been applied to the live project.
-New ordering, staff-access and settings RPCs must be installed in a safe development project
-before an integrated demonstration. Administrator account provisioning and mandatory first
-password change are documented designs, not deployed services.
+**Release status: implemented locally; managed staging and operational approval required.**
+V3.1 adds trusted owner/staff provisioning, server-enforced password activation, billing/offline
+payment records, receipts, KOT, cashier reconciliation, server metrics, branding and schedules.
+Both V3 migrations are now deployed externally and their contracts were verified read-only.
+The three new V3.1 migrations and Edge Function have not been deployed. No production write,
+payment-provider activation or merge was performed. This is not a completed pilot certification.
+
+Start with [V3.1 architecture/status](docs/V3_1_ARCHITECTURE.md),
+[deployment](docs/V3_1_DEPLOYMENT.md) and [test results](docs/V3_1_TESTING.md).
 
 ## Local setup
 
@@ -64,7 +68,9 @@ Review [the V3 migration](supabase/migrations/20261109125008_v3_stabilization.sq
 in that order, with the [security/deployment instructions](docs/SUPABASE_SECURITY.md).
 The SQL targets the inspected existing schema. The tests use schema-only fixtures with synthetic
 records, never production rows. No production accounts, orders, policies or migrations were changed.
-Guest ordering and service-request permissions still require the approved database deployment.
+The existing V3 guest-order/service contracts are present in production. The live history uses
+different V3 timestamps from the local files: review the [history mapping and three V3.1 migrations](docs/V3_1_DATABASE_MIGRATIONS.md)
+before any deployment. Do not blindly reapply older migrations over V3.1 authorization helpers.
 
 ## Verification
 
@@ -83,6 +89,20 @@ physical-device scanning, real account sign-in or concurrent-client staging test
 
 ## Documentation
 
+- [V3.1 architecture and status](docs/V3_1_ARCHITECTURE.md)
+- [Complete changed-file map](docs/V3_1_FILES.md)
+- [V3.1 security audit and privacy review](docs/V3_1_SECURITY_AUDIT.md)
+- [V3.1 database migrations and rollback](docs/V3_1_DATABASE_MIGRATIONS.md)
+- [Trusted restaurant/staff onboarding](docs/V3_1_RESTAURANT_ONBOARDING.md)
+- [Bills and receipts](docs/V3_1_BILLING.md)
+- [KOT](docs/V3_1_KOT.md)
+- [Payment recording and reconciliation](docs/V3_1_PAYMENT_RECONCILIATION.md)
+- [V3.1 testing and limits](docs/V3_1_TESTING.md)
+- [Deployment/environment variables](docs/V3_1_DEPLOYMENT.md)
+- [Restaurant acceptance run](docs/V3_1_RESTAURANT_DEMO.md)
+
+Historical V3 reports:
+
 - [Audit and remaining risks](docs/V3_AUDIT.md)
 - [Repairs and file map](docs/V3_FIXES.md)
 - [Manual-test follow-up fixes and database rollout](docs/V3_FOLLOWUP.md)
@@ -91,6 +111,9 @@ physical-device scanning, real account sign-in or concurrent-client staging test
 - [Test setup, results and limits](docs/TESTING.md)
 - [Restaurant demonstration guide](docs/RESTAURANT_DEMO_GUIDE.md)
 
-DOB collection, guest loyalty redemption/reviews, full POS modifier selection, payments,
-subscription purchases and verified operating-hours configuration remain incomplete. Their
-controls either explain the limitation or avoid reporting success. See the audit for detail.
+DOB/verified guest loyalty/reviews, full POS modifier selection, automated account-delivery
+channels, customer privacy export/deletion/retention automation, overnight scheduling, provider
+payments/subscription checkout and verified GST tax invoicing remain incomplete. Existing
+controls disclose those limits. Receipts are labelled as receipts; offline entries do not prove
+a transfer. Managed Auth/Realtime, concurrent clients, physical devices/printers, tax/privacy
+review, backups and explicit production approval remain required before commercial pilot use.

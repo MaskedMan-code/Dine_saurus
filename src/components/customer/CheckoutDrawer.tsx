@@ -242,6 +242,11 @@ export const CheckoutDrawer: React.FC<Props> = ({ isOpen, onClose, onOrderPlaced
                         <span className="font-semibold text-[#242424]">{item.menuItem.name}</span>
                         <span className="text-[11px] text-[#70706b]">x{item.quantity}</span>
                       </div>
+                      {item.menuItem.isSoldOut && (
+                        <p className="text-red-700 text-xs">
+                          Unavailable — remove this item before ordering.
+                        </p>
+                      )}
                       {item.selectedModifiers.length > 0 && (
                         <p className="text-[10px] text-[#70706b]">
                           {item.selectedModifiers.map((m) => m.optionName).join(', ')}

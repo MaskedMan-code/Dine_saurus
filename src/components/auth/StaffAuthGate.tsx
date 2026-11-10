@@ -2,7 +2,10 @@ import React, { useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Loader2, ShieldCheck } from 'lucide-react';
 
-export const StaffAuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const StaffAuthGate: React.FC<{ children: React.ReactNode; platform?: boolean }> = ({
+  children,
+  platform = false,
+}) => {
   const {
     authLoading,
     profileLoading,
@@ -27,7 +30,7 @@ export const StaffAuthGate: React.FC<{ children: React.ReactNode }> = ({ childre
         <Loader2 className="w-6 h-6 animate-spin text-[#16342b]" />
       </div>
     );
-  if (user && (profileError || !isStaff))
+  if (user && (profileError || (!isStaff && !platform)))
     return (
       <div className="max-w-md mx-auto p-8 text-center space-y-4">
         <h1 className="text-xl font-semibold text-[#16342b]">Your session is active</h1>
@@ -46,7 +49,7 @@ export const StaffAuthGate: React.FC<{ children: React.ReactNode }> = ({ childre
         {authError && <p role="alert">{authError}</p>}
       </div>
     );
-  if (isStaff) return <>{children}</>;
+  if (isStaff || (user && platform)) return <>{children}</>;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (lock.current) return;

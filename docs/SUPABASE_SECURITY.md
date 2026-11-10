@@ -2,16 +2,18 @@
 
 ## Current state
 
-The live project was inspected read-only during stabilization and the manual-test follow-up.
-It still lacks `place_qr_order_idempotent`, and `current_customer_id` lacks authenticated EXECUTE.
-The changes below exist only in these ordered migrations:
+The live project was re-inspected read-only on 10 November 2026. Both V3 migrations below are
+now deployed externally: the ordering RPC, helper ACL, service policies and catalog publication
+are present. The V3.1 migrations/Edge Function remain local only. See
+[the V3.1 audit](V3_1_SECURITY_AUDIT.md) and [history/deployment mapping](V3_1_DATABASE_MIGRATIONS.md).
+The following sections describe the original V3 contracts:
 
 1. [`20261109125008_v3_stabilization.sql`](../supabase/migrations/20261109125008_v3_stabilization.sql)
 2. [`20261109191729_v3_menu_refresh_permissions.sql`](../supabase/migrations/20261109191729_v3_menu_refresh_permissions.sql)
 
 Both were executed against local PostgreSQL through PGlite with schema-only fixtures and
 synthetic data. The follow-up refuses to commit without the first migration's ordering RPC.
-Managed Supabase deployment and concurrent connections remain unverified. See the
+Managed end-to-end Auth/API behavior and concurrent connections remain unverified. See the
 [follow-up report](V3_FOLLOWUP.md) for the reproduced permission failure and frontend repairs.
 
 Do not automatically run these migrations against production. They depend on the inspected
@@ -84,7 +86,8 @@ data according to the restaurant's policy. Do not expose bearer tracking tokens 
 
 ## Realtime
 
-Read-only live inspection found neither `orders` nor `service_requests` in `supabase_realtime`.
+The original V3 inspection found neither `orders` nor `service_requests` in `supabase_realtime`.
+The 10 November recheck confirms both and all reviewed catalog tables are now published.
 The migration adds these tables idempotently if the publication exists; otherwise it emits a
 notice requiring project setup. Confirm publication membership, RLS visibility and websocket
 delivery in the development project. The frontend uses one filtered channel per authorized
