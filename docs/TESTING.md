@@ -1,5 +1,8 @@
 # Testing and verification
 
+This is the historical V3 result record. Current V3.1 results and four-viewport coverage are in
+[V3_1_TESTING.md](V3_1_TESTING.md); baseline results below are retained for traceability.
+
 ## Commands
 
 Verification was performed on Windows with Node 24.12.0. PowerShell script execution policy

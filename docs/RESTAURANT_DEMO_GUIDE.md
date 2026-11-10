@@ -1,5 +1,9 @@
 # Restaurant demonstration guide
 
+For the V3.1 candidate use [V3_1_RESTAURANT_DEMO.md](V3_1_RESTAURANT_DEMO.md). This older
+checklist records the V3 scope. Both V3 migrations are now present on the live project;
+V3.1 migrations/backend still require approved staging and production rollout.
+
 ## Prepare a safe demonstration
 
 Use a dedicated development/demo project with synthetic restaurant data. Review/apply the V3

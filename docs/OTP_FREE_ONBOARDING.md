@@ -1,5 +1,10 @@
 # OTP-free onboarding
 
+**V3.1 update:** the trusted Edge Function and server password gate described below are now
+implemented and locally tested, but not deployed. Use [V3.1 onboarding](V3_1_RESTAURANT_ONBOARDING.md)
+and [deployment](V3_1_DEPLOYMENT.md) for the current workflow. The design section below is the
+historical V3 plan, not a claim that the new backend remains unimplemented.
+
 ## Diners — implemented application flow
 
 Scan table QR → browse menu → choose modifiers/items → enter full name and mobile → place order
@@ -31,12 +36,12 @@ The public browser signup/team-code form has been removed. The prepared database
 longer trusts editable signup metadata to create organizations, memberships or privileged roles.
 Existing memberships and restaurant data are preserved.
 
-## Trusted administrator provisioning — prepared design, not deployed
+## Historical V3 provisioning design
 
-The branch does not include an authenticated provisioning Edge Function or a server-enforced
-first-password-change gate. Do not advertise this workflow as operational until the following
-trusted service is implemented and tested. Never put an Admin API key in browser code to fill
-this gap.
+At the V3 cutoff the branch did not include the trusted backend or password gate. V3.1 now
+implements a temporary-credential workflow with manual approved delivery and a SQL gate;
+managed integration/deployment remains required. The following original design includes
+optional future invitation-token delivery; that invitation transport is not implemented.
 
 1. An independently authorized Dine_saurus platform administrator opens a protected server or
    Edge Function. Verify the caller's access token with Supabase Auth, then check a server-owned
