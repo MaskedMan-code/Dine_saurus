@@ -1,33 +1,32 @@
+import { pilotRpc } from '../../lib/pilot';
+import type { Kot } from '../../types/pilot';
+import { KotDocument, printDocument } from '../billing/PrintDocument';
 import React, { useState } from 'react';
 import { useRestaurant } from '../../context/RestaurantContext';
 import { Order } from '../../types';
-import {
-  ChefHat,
-  Clock,
-  CheckCircle2,
-  Car,
-  Printer,
-  Sparkles,
-  Volume2,
-  Check,
-} from 'lucide-react';
+import { ChefHat, Clock, CheckCircle2, Car, Printer, Sparkles, Volume2, Check } from 'lucide-react';
 
 export const KitchenView: React.FC = () => {
   const { orders, updateOrderStatus, restaurant, playOrderChime } = useRestaurant();
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'pending' | 'preparing' | 'ready' | 'completed'>('all');
+  const [selectedFilter, setSelectedFilter] = useState<
+    'all' | 'pending' | 'preparing' | 'ready' | 'completed'
+  >('all');
+  const [printError, setPrintError] = useState('');
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
 
-  const filteredOrders = orders.filter(ord => {
+  const filteredOrders = orders.filter((ord) => {
     if (selectedFilter === 'all') return ord.status !== 'cancelled';
     return ord.status === selectedFilter;
   });
 
-  const pendingCount = orders.filter(o => o.status === 'pending').length;
-  const preparingCount = orders.filter(o => o.status === 'preparing' || o.status === 'accepted').length;
-  const readyCount = orders.filter(o => o.status === 'ready').length;
+  const pendingCount = orders.filter((o) => o.status === 'pending').length;
+  const preparingCount = orders.filter(
+    (o) => o.status === 'preparing' || o.status === 'accepted',
+  ).length;
+  const readyCount = orders.filter((o) => o.status === 'ready').length;
 
   const toggleItemChecked = (itemId: string) => {
-    setCheckedItems(prev => ({ ...prev, [itemId]: !prev[itemId] }));
+    setCheckedItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
   };
 
   const getElapsedMinutes = (dateStr: string) => {
@@ -35,12 +34,29 @@ export const KitchenView: React.FC = () => {
     return Math.max(1, elapsed);
   };
 
-  const handlePrintSlip = (_order: Order) => {
-    window.print();
+  const handlePrintSlip = (order: Order) => {
+    const popup = window.open('', '_blank', 'width=500,height=800');
+    if (!popup) {
+      setPrintError('Allow popups to print a KOT.');
+      return;
+    }
+    popup.opener = null;
+    setPrintError('');
+    void pilotRpc<Kot>('pilot_get_kot', { p_order_id: order.id })
+      .then((kot) => printDocument(popup, <KotDocument kot={kot} />, '80'))
+      .catch((e) => {
+        popup.close();
+        setPrintError(e.message);
+      });
   };
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+      {printError && (
+        <p role="alert" className="p-3 bg-red-50 text-red-700">
+          {printError}
+        </p>
+      )}
       {/* Top Metrics & Action Cluster */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -50,7 +66,9 @@ export const KitchenView: React.FC = () => {
             </div>
             <div>
               <h2 className="font-bold text-lg text-slate-900">Kitchen Display System (KDS)</h2>
-              <p className="text-xs text-slate-500">Realtime order expediting & kitchen line terminal</p>
+              <p className="text-xs text-slate-500">
+                Realtime order expediting & kitchen line terminal
+              </p>
             </div>
           </div>
         </div>
@@ -86,12 +104,15 @@ export const KitchenView: React.FC = () => {
       {/* Status Filter Bar */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
         {[
-          { id: 'all', label: `All Active (${orders.filter(o => o.status !== 'completed').length})` },
+          {
+            id: 'all',
+            label: `All Active (${orders.filter((o) => o.status !== 'completed').length})`,
+          },
           { id: 'pending', label: `Pending New (${pendingCount})` },
           { id: 'preparing', label: `Preparing (${preparingCount})` },
           { id: 'ready', label: `Ready for Serving (${readyCount})` },
           { id: 'completed', label: `Completed Orders` },
-        ].map(tab => (
+        ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setSelectedFilter(tab.id as any)}
@@ -111,13 +132,16 @@ export const KitchenView: React.FC = () => {
         <div className="text-center py-20 bg-white rounded-xl border border-slate-200 space-y-3">
           <ChefHat className="w-12 h-12 text-slate-300 mx-auto" />
           <h3 className="font-bold text-base text-slate-900">No Orders in This Station</h3>
-          <p className="text-xs text-slate-500">New table and QR orders will immediately pop up with audio alerts.</p>
+          <p className="text-xs text-slate-500">
+            New table and QR orders will immediately pop up with audio alerts.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredOrders.map(order => {
+          {filteredOrders.map((order) => {
             const elapsedMins = getElapsedMinutes(order.createdAt);
-            const isUrgent = elapsedMins > 15 && order.status !== 'completed' && order.status !== 'ready';
+            const isUrgent =
+              elapsedMins > 15 && order.status !== 'completed' && order.status !== 'ready';
 
             return (
               <div
@@ -126,10 +150,10 @@ export const KitchenView: React.FC = () => {
                   isUrgent
                     ? 'border-rose-500 ring-2 ring-rose-200'
                     : order.status === 'pending'
-                    ? 'border-amber-400 ring-1 ring-amber-200'
-                    : order.status === 'ready'
-                    ? 'border-emerald-500 ring-1 ring-emerald-200'
-                    : 'border-slate-200'
+                      ? 'border-amber-400 ring-1 ring-amber-200'
+                      : order.status === 'ready'
+                        ? 'border-emerald-500 ring-1 ring-emerald-200'
+                        : 'border-slate-200'
                 }`}
               >
                 {/* Ticket Top Header */}
@@ -138,13 +162,15 @@ export const KitchenView: React.FC = () => {
                     order.status === 'pending'
                       ? 'bg-amber-50/70 border-amber-200'
                       : order.status === 'ready'
-                      ? 'bg-emerald-50/70 border-emerald-200'
-                      : 'bg-slate-50 border-slate-200'
+                        ? 'bg-emerald-50/70 border-emerald-200'
+                        : 'bg-slate-50 border-slate-200'
                   }`}
                 >
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-base text-slate-900">{order.orderNumber}</span>
+                      <span className="font-bold text-base text-slate-900">
+                        {order.orderNumber}
+                      </span>
                       <span
                         className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                           order.orderMode === 'car_delivery'
@@ -155,8 +181,8 @@ export const KitchenView: React.FC = () => {
                         {order.orderMode === 'dine_in'
                           ? `Table ${order.tableNumber || '12'}`
                           : order.orderMode === 'car_delivery'
-                          ? 'Car Curbside'
-                          : 'Takeaway'}
+                            ? 'Car Curbside'
+                            : 'Takeaway'}
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
@@ -197,7 +223,7 @@ export const KitchenView: React.FC = () => {
                 {/* Items Checklist for Chefs */}
                 <div className="p-4 space-y-3 flex-grow overflow-y-auto max-h-72">
                   <div className="divide-y divide-slate-100">
-                    {order.items.map(item => {
+                    {order.items.map((item) => {
                       const isDone = checkedItems[item.id];
                       return (
                         <div
@@ -226,7 +252,7 @@ export const KitchenView: React.FC = () => {
 
                             {item.selectedModifiers.length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
-                                {item.selectedModifiers.map(mod => (
+                                {item.selectedModifiers.map((mod) => (
                                   <span
                                     key={mod.optionId}
                                     className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700"
@@ -269,14 +295,18 @@ export const KitchenView: React.FC = () => {
                   {order.status === 'pending' && (
                     <>
                       <button
-                        onClick={() => updateOrderStatus(order.id, 'accepted', 'Accepted by kitchen')}
+                        onClick={() =>
+                          updateOrderStatus(order.id, 'accepted', 'Accepted by kitchen')
+                        }
                         className="flex-grow bg-indigo-600 text-white py-2 px-3 rounded-lg font-semibold text-xs hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
                         <Check className="w-3.5 h-3.5" />
                         <span>Accept Ticket</span>
                       </button>
                       <button
-                        onClick={() => updateOrderStatus(order.id, 'cancelled', 'Rejected by kitchen')}
+                        onClick={() =>
+                          updateOrderStatus(order.id, 'cancelled', 'Rejected by kitchen')
+                        }
                         className="px-3 py-2 rounded-lg border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50 cursor-pointer"
                       >
                         Reject

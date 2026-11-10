@@ -64,7 +64,8 @@ export type AppViewMode =
   | 'analytics'
   | 'loyalty_admin'
   | 'settings'
-  | 'admin_users';
+  | 'admin_users'
+  | 'platform_admin';
 
 interface RestaurantContextType {
   viewMode: AppViewMode;
@@ -374,7 +375,13 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
         if (locErr) throw new Error(locErr.message);
         if (cancelled) return;
 
-        const mappedRestaurant = mapRestaurant(rest, locs || []);
+        const mappedRestaurant = mapRestaurant(
+          rest,
+          [...(locs || [])].sort(
+            (a: any, b: any) =>
+              Number(b.id === tenantLocationId) - Number(a.id === tenantLocationId),
+          ),
+        );
         setRestaurant(mappedRestaurant);
 
         const effectiveLocationId = tenantLocationId || mappedRestaurant.locations[0]?.id;
@@ -489,7 +496,7 @@ const RestaurantSession: React.FC<{ children: React.ReactNode }> = ({ children }
         setCart((prev) =>
           prev.map((ci) => {
             const item = mappedItems.find((m) => m.id === ci.menuItem.id);
-            if (!item) return ci;
+            if (!item) return { ...ci, menuItem: { ...ci.menuItem, isSoldOut: true } };
             const modifiers = ci.selectedModifiers.map((m) => {
               const option = item.modifierGroups
                 ?.flatMap((g) => g.options)

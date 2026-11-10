@@ -226,6 +226,8 @@ export interface RestaurantLocation {
   timezone: string;
   isOpen: boolean;
   openingHours: string;
+  openingSchedule?: import('../lib/hours').OpeningHours | null;
+  holidayClosures?: string[];
 }
 
 export interface Restaurant {

@@ -31,11 +31,13 @@ import { ServiceRequestModal } from './ServiceRequestModal';
 import { LoyaltyDrawer } from './LoyaltyDrawer';
 import { ReviewModal } from './ReviewModal';
 import { TableSelectorModal } from './TableSelectorModal';
+import { brandColors } from '../../lib/branding';
 
 export const CustomerView: React.FC = () => {
   const {
     restaurant,
     activeTable,
+    activeLocationId,
     areas,
     categories,
     menuItems,
@@ -76,6 +78,8 @@ export const CustomerView: React.FC = () => {
   }
 
   const currentArea = activeTable ? areas.find((a) => a.id === activeTable.areaId) : null;
+  const location = restaurant.locations.find((l) => l.id === activeLocationId);
+  const accent = brandColors(restaurant.primaryColor);
 
   // Filtered menu items
   const filteredItems = menuItems.filter((item) => {
@@ -121,12 +125,21 @@ export const CustomerView: React.FC = () => {
         <header className="sticky top-0 z-40 bg-[#f9f9f7]/95 backdrop-blur-md px-4 py-3.5 border-b border-[#ebebe8] flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-[#e8e8e6] flex items-center justify-center text-[#16342b] shadow-sm">
-              <span
-                className="material-symbols-outlined text-[20px]"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                restaurant
-              </span>
+              {restaurant.logoUrl?.startsWith('https://') ? (
+                <img
+                  src={restaurant.logoUrl}
+                  referrerPolicy="no-referrer"
+                  alt={`${restaurant.name} logo`}
+                  className="w-9 h-9 rounded-full object-cover"
+                />
+              ) : (
+                <span
+                  className="material-symbols-outlined text-[20px]"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  restaurant
+                </span>
+              )}
             </div>
             <div>
               <h1 className="font-bold text-base text-[#16342b] tracking-tight leading-none">
@@ -189,6 +202,12 @@ export const CustomerView: React.FC = () => {
 
           {/* Floating Table Info Card */}
           <div className="absolute left-6 right-6 -bottom-4 bg-[#fcfcfb]/95 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-[0_8px_24px_rgba(22,52,43,0.08)] border border-white/60 z-10 flex flex-col gap-2.5">
+            {restaurant.description && (
+              <p className="text-xs text-[#414845] line-clamp-2">{restaurant.description}</p>
+            )}
+            <p className="text-xs text-[#414845]">
+              {location?.openingHours || 'Opening hours not configured'}
+            </p>
             <div className="flex justify-between items-start">
               <div>
                 <p className="text-[10px] uppercase tracking-widest font-semibold text-[#70706b]">
@@ -238,6 +257,7 @@ export const CustomerView: React.FC = () => {
         <div className="px-4 mt-6">
           <button
             onClick={scrollToMenu}
+            style={accent}
             className="w-full bg-[#16342b] text-white py-4 rounded-xl font-semibold text-xs uppercase tracking-widest hover:bg-[#2d4b41] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
           >
             <span>View Full Menu</span>
@@ -598,6 +618,7 @@ export const CustomerView: React.FC = () => {
             <button
               aria-label="View cart and checkout"
               onClick={() => setIsCheckoutOpen(true)}
+              style={accent}
               className="w-full bg-[#16342b] text-white rounded-full py-3.5 px-5 flex items-center justify-between shadow-[0_8px_24px_rgba(22,52,43,0.25)] hover:bg-[#2d4b41] transition-all cursor-pointer"
             >
               <div className="flex items-center gap-3">

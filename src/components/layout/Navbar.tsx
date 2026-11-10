@@ -124,12 +124,16 @@ export const Navbar: React.FC = () => {
 
           {/* Supabase Status Pill */}
           <div
-            title="Connected to Supabase PostgreSQL & Realtime"
+            title="Last backend connectivity check; Realtime delivery is checked separately"
             className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#244238] border border-[#3a5d51] text-xs text-[#c8eadc]"
           >
             <Database className="w-3.5 h-3.5 text-[#c8eadc]" />
-            <span className="text-[11px] font-medium text-[#adcec0]">Supabase Live</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span className="text-[11px] font-medium text-[#adcec0]">
+              {isSupabaseConnected ? 'Backend reachable' : 'Backend unavailable'}
+            </span>
+            <span
+              className={`w-2 h-2 rounded-full ${isSupabaseConnected ? 'bg-emerald-400' : 'bg-amber-400'}`}
+            ></span>
           </div>
 
           {/* Audio Chime Toggle */}

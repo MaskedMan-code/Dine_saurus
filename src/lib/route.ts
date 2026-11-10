@@ -11,6 +11,7 @@ export const VIEW_MODES = [
   'loyalty_admin',
   'settings',
   'admin_users',
+  'platform_admin',
 ] as const;
 export type AppViewMode = (typeof VIEW_MODES)[number];
 export function getViewMode(search = window.location.search): AppViewMode {

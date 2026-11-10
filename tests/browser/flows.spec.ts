@@ -86,12 +86,17 @@ async function backend(
     missingOrderRpc?: boolean;
     failStock?: boolean;
     menuState?: ReturnType<typeof createMenuState>;
+    platform?: boolean;
+    mustChange?: boolean;
   } = {},
 ) {
   const menu = options.menuState ?? createMenuState();
   const notify = (table: string, record: any) =>
     menu.listeners.forEach((listener) => listener({ table, record }));
   let order: any = null;
+  let bill: any = null;
+  let passwordChanged = false;
+  let paymentCalls = 0;
   let orderCalls = 0;
   const requests: string[] = [];
   const extraTables: any[] = [];
@@ -109,6 +114,7 @@ async function backend(
       const payload = Buffer.from(
         JSON.stringify({
           sub: uid,
+          iat: Math.floor(Date.now() / 1000),
           exp: Math.floor(Date.now() / 1000) + 3600,
           role: 'authenticated',
           aud: 'authenticated',
@@ -132,6 +138,143 @@ async function backend(
     }
     if (path === '/auth/v1/logout') return json({});
     if (path === '/auth/v1/user') return json({ id: uid, email: 'owner@example.test' });
+    if (path === '/rest/v1/rpc/pilot_operator_gate')
+      return json({
+        ready: !options.mustChange || passwordChanged,
+        must_change: !!options.mustChange && !passwordChanged,
+        expired: false,
+        locked: false,
+        platform_admin: !!options.platform,
+      });
+    if (path === '/rest/v1/rpc/pilot_platform_overview')
+      return json({ accounts: [], operations: [], audit: [] });
+    if (path === '/functions/v1/pilot-admin') {
+      if (body.action === 'change_password') {
+        passwordChanged = true;
+        return json({ stage: 'activated', sign_in_required: true });
+      }
+      return json({
+        stage: 'completed',
+        email: body.payload?.email,
+        temporary_password: 'synthetic-test-credential-only',
+        expires_in_hours: 24,
+      });
+    }
+    if (path === '/rest/v1/rpc/pilot_issue_bill') {
+      bill ??= {
+        id: '00000000-0000-4000-8000-000000000091',
+        location_id: fixtures().location,
+        receipt_number: 'R-00000000000040008001000000000003-2026-000001',
+        currency: 'INR',
+        created_at: new Date().toISOString(),
+        state: 'issued',
+        subtotal: 100,
+        discount: 0,
+        tax: 8,
+        service_charge: 5,
+        tip: 0,
+        total: 113,
+        paid: 0,
+        received: 0,
+        refunded: 0,
+        balance: 113,
+        payment_status: 'pending',
+        payments: [],
+        snapshot: {
+          brand: {
+            name: 'Restaurant A',
+            address: 'Synthetic address',
+            phone: '0000000000',
+            timezone: 'Asia/Kolkata',
+            paper_width: '80',
+          },
+          orders: [
+            {
+              id: order.id,
+              number: order.public_order_number,
+              table: 'Table 1',
+              mode: 'dine_in',
+              created_at: order.created_at,
+              items: [{ name: 'Soup A', quantity: 1, unit_price: 100, total: 100, modifiers: [] }],
+            },
+          ],
+        },
+      };
+      return json(bill);
+    }
+    if (path === '/rest/v1/rpc/pilot_get_bill') return json(bill);
+    if (path === '/rest/v1/rpc/pilot_daily_metrics')
+      return json({
+        timezone: 'Asia/Kolkata',
+        currency: 'INR',
+        orders: {
+          count: order ? 1 : 0,
+          ordered_total: order ? 113 : 0,
+          average_order_value: order ? 113 : null,
+          completed: 0,
+        },
+        billing: {
+          billed_total: bill?.total || 0,
+          discounts: 0,
+          taxes: bill?.tax || 0,
+          service_charges: bill?.service_charge || 0,
+        },
+        collections: { received: bill?.paid || 0, returned: 0, net: bill?.paid || 0 },
+        current: {
+          outstanding: bill?.balance || 0,
+          unpaid_orders: order ? 1 : 0,
+          occupied_tables: order ? 1 : 0,
+          service_requests: 0,
+          kitchen_backlog: order ? 1 : 0,
+        },
+        timing: { preparation_minutes: null, completion_minutes: null },
+        closed_sessions: 0,
+        items: [],
+        categories: [],
+        hours: [],
+      });
+    if (path === '/rest/v1/rpc/pilot_record_payment') {
+      paymentCalls++;
+      const amount = Number(body.p_amount);
+      bill.payments.push({
+        id: 'payment-test-' + paymentCalls,
+        kind: body.p_kind,
+        method: body.p_method,
+        amount,
+        reference: body.p_reference,
+        created_at: new Date().toISOString(),
+      });
+      bill.paid += amount;
+      bill.balance = bill.total - bill.paid;
+      bill.payment_status = bill.balance === 0 ? 'paid' : 'partially_paid';
+      return json(bill);
+    }
+    if (path === '/rest/v1/rpc/pilot_get_kot')
+      return json({
+        order_id: order.id,
+        ticket_number: 'K-ORD-TEST',
+        restaurant: 'Restaurant A',
+        timezone: 'Asia/Kolkata',
+        created_at: order.created_at,
+        status: order.status,
+        snapshot: {
+          id: order.id,
+          number: order.public_order_number,
+          table: 'Table 1',
+          mode: 'dine_in',
+          created_at: order.created_at,
+          items: [
+            {
+              name: 'Soup A',
+              quantity: 1,
+              unit_price: 100,
+              total: 100,
+              modifiers: [{ name: 'Extra herbs', amount: 0 }],
+              instructions: 'No chilli',
+            },
+          ],
+        },
+      });
     if (path === '/rest/v1/rpc/resolve_qr_context') {
       if (body.p_public_token?.includes('invalid'))
         return json({ message: 'QR code is invalid or revoked', code: 'P0001' }, 400);
@@ -273,6 +416,7 @@ async function backend(
     if (resource === 'menu_item_location_settings')
       rows = menu.stock[f.location] ? [menu.stock[f.location]] : [];
     if (resource === 'orders') rows = order ? [order] : [];
+    if (resource === 'pilot_bills') rows = bill ? [bill] : [];
     if (resource === 'organizations') rows = [{ id: f.org, join_code: 'TEST00' }];
     if (request.method() === 'HEAD')
       return route.fulfill({ status: 200, headers: { 'content-range': '0-0/0' }, body: '' });
@@ -357,6 +501,9 @@ async function backend(
     requests,
     get orderCalls() {
       return orderCalls;
+    },
+    get paymentCalls() {
+      return paymentCalls;
     },
     get persistedQr() {
       return extraQrs[0];
@@ -558,8 +705,8 @@ test('Edit Item stock changes reach an open guest cart and menu without a reload
   await expect(page.getByTitle('Edit Item')).toBeVisible();
   const guestContext = await browser.newContext({
     viewport: page.viewportSize()!,
-    isMobile: test.info().project.name === 'mobile',
-    hasTouch: test.info().project.name === 'mobile',
+    isMobile: test.info().project.name.includes('mobile'),
+    hasTouch: test.info().project.name.includes('mobile'),
   });
   try {
     const guest = await guestContext.newPage();
@@ -641,4 +788,145 @@ test('an undeployed order RPC keeps the cart and offers an honest restaurant-set
       .filter((path) => path.includes('/rpc/place_qr_order'))
       .every((path) => path.endsWith('/place_qr_order_idempotent')),
   ).toBe(true);
+});
+
+test('temporary credentials require a new password before restaurant tools and return to password login', async ({
+  page,
+}) => {
+  await backend(page, { mustChange: true });
+  await page.goto('/?view=pos');
+  await login(page);
+  await expect(page.getByRole('heading', { name: 'Choose your own password' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Bills & recorded payments' })).toHaveCount(0);
+  await page
+    .getByLabel('Current temporary password', { exact: true })
+    .fill('temporary-test-password');
+  await page.getByLabel('New password', { exact: true }).fill('new-private-test-password');
+  await page.getByLabel('Confirm new password', { exact: true }).fill('new-private-test-password');
+  await page.getByRole('button', { name: 'Change password and sign out', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Restaurant team sign in' })).toBeVisible();
+  await login(page);
+  await expect(page.getByRole('button', { name: 'Bills & recorded payments' })).toBeVisible();
+});
+test('restaurant owners cannot enter the separate platform administrator interface', async ({
+  page,
+}) => {
+  await backend(page);
+  await page.goto('/?view=platform_admin');
+  await login(page);
+  await expect(page.getByRole('alert')).toContainText(
+    'Verified platform administrator access is required',
+  );
+  await expect(page.getByRole('heading', { name: 'Provision a restaurant owner' })).toHaveCount(0);
+});
+test('verified platform administrator provisions an owner with a clear manual credential handoff', async ({
+  page,
+}) => {
+  await backend(page, { platform: true });
+  await page.goto('/?view=platform_admin');
+  await login(page);
+  await page.getByLabel('Organization name', { exact: true }).fill('Pilot Restaurant');
+  await page.getByLabel('Owner name', { exact: true }).fill('Pilot Owner');
+  await page.getByLabel('Account email', { exact: true }).fill('pilot-owner@example.test');
+  await page
+    .getByLabel('I verified the recipient email and have an approved secure delivery channel.')
+    .check();
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await expect(page.getByLabel('Temporary password', { exact: true })).toHaveValue(
+    'synthetic-test-credential-only',
+  );
+  await expect(page.getByText('No message has been sent.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear credential from screen' }).click();
+  await expect(page.getByLabel('Temporary password', { exact: true })).toHaveCount(0);
+});
+test('cashier reviews a server bill, records partial and full offline payments, and prints all receipt sizes', async ({
+  page,
+}) => {
+  const api = await backend(page);
+  api.deliverOrder();
+  await page.goto('/?view=pos');
+  await login(page);
+  await page.getByRole('button', { name: 'Bills & recorded payments', exact: true }).click();
+  await page.getByLabel(/ORD-TEST.*Table/).check();
+  await page.getByRole('button', { name: 'Generate / open bill', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'R-00000000000040008001000000000003-2026-000001' }),
+  ).toBeVisible();
+  await page.getByLabel('Amount', { exact: true }).fill('50');
+  await page.getByRole('button', { name: 'Confirm recorded entry', exact: true }).click();
+  await expect(page.getByText('State: issued · Payment: partially paid')).toBeVisible();
+  await page.getByLabel('Payment method', { exact: true }).selectOption('upi');
+  await page.getByLabel('External reference', { exact: true }).fill('UPI-SYNTHETIC-TEST');
+  await page.getByRole('button', { name: 'Confirm recorded entry', exact: true }).click();
+  await expect(page.getByText('State: issued · Payment: paid')).toBeVisible();
+  expect(api.paymentCalls).toBe(2);
+  for (const width of ['58', '80', 'A4']) {
+    await page.getByLabel('Print format', { exact: true }).selectOption(width);
+    const pop = page.waitForEvent('popup');
+    await page.getByRole('button', { name: 'Print receipt / save PDF', exact: true }).click();
+    const print = await pop;
+    await expect(
+      print.getByRole('heading', {
+        name: 'Receipt R-00000000000040008001000000000003-2026-000001',
+      }),
+    ).toBeVisible();
+    await expect(print.getByText('Receipt — not a verified tax invoice.')).toBeVisible();
+    await expect(print.getByText('UPI-SYNTHETIC-TEST', { exact: false })).toBeVisible();
+    expect(await print.locator('style').textContent()).toContain(
+      width === 'A4' ? 'size:A4' : `size:${width}mm `,
+    );
+    expect(await print.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await print.close();
+  }
+});
+test('accepted kitchen orders print a specific KOT with modifiers, instructions and stable ticket number', async ({
+  page,
+}) => {
+  const api = await backend(page);
+  api.deliverOrder();
+  await page.goto('/?view=kds');
+  await login(page);
+  await page.getByRole('button', { name: 'Accept Ticket', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start Cooking', exact: true })).toBeVisible();
+  for (let n = 0; n < 2; n++) {
+    const pop = page.waitForEvent('popup');
+    await page.getByTitle('Print Kitchen Slip').click();
+    const print = await pop;
+    await expect(print.getByRole('heading', { name: 'Kitchen Order Ticket' })).toBeVisible();
+    await expect(print.getByText('K-ORD-TEST', { exact: true })).toBeVisible();
+    await expect(print.getByText('Extra herbs', { exact: true })).toBeVisible();
+    await expect(print.getByText('Note: No chilli', { exact: true })).toBeVisible();
+    await print.close();
+  }
+});
+test('operational dashboard separates orders from collected money and offline status preserves an unsent cart', async ({
+  page,
+  context,
+}) => {
+  const api = await backend(page);
+  api.deliverOrder();
+  await page.goto('/?view=analytics');
+  await login(page);
+  await expect(
+    page.getByRole('heading', { name: 'Daily operations & recorded collections' }),
+  ).toBeVisible();
+  await expect(page.getByText('Payments recorded', { exact: true }).locator('..')).toContainText(
+    '0.00',
+  );
+  await expect(page.getByText('Ordered amount', { exact: true }).locator('..')).toContainText(
+    '113.00',
+  );
+  await expect(page.getByText('Average preparation:', { exact: false })).toContainText(
+    'Not yet measurable',
+  );
+  await page.goto(`/?view=customer&table=${fixtures().token}`);
+  await addSoup(page);
+  await page.getByLabel('Full name (required)').fill('Offline Diner');
+  await context.setOffline(true);
+  await expect(page.getByRole('status').filter({ hasText: 'You are offline.' })).toBeVisible();
+  await context.setOffline(false);
+  await expect(page.getByLabel('Full name (required)')).toHaveValue('Offline Diner');
+  expect(api.orderCalls).toBe(0);
 });

@@ -1,3 +1,7 @@
+import { StaffDutyEditor } from './StaffDutyEditor';
+import { ProvisionForm, CredentialResult } from './ProvisionForm';
+import { submitProvision } from '../../lib/pilot';
+import { useRestaurant } from '../../context/RestaurantContext';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth, StaffRole } from '../../context/AuthContext';
@@ -25,7 +29,12 @@ interface StaffRow {
 const ROLE_OPTIONS: StaffRole[] = ['owner', 'admin', 'manager', 'staff'];
 
 export const AdminUsersView: React.FC = () => {
-  const { staff, isAdmin } = useAuth();
+  const { staff, isAdmin, user } = useAuth();
+  const { restaurant } = useRestaurant();
+  const [assignment, setAssignment] = useState<StaffRow | null>(null);
+  const [activity, setActivity] = useState<any[] | null>(null);
+  const [credential, setCredential] = useState<any>(null);
+  const [resetBusy, setResetBusy] = useState(false);
   const [tab, setTab] = useState<'customers' | 'staff'>('customers');
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffRows, setStaffRows] = useState<StaffRow[]>([]);
@@ -130,6 +139,53 @@ export const AdminUsersView: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
+      {staff?.role === 'owner' && (
+        <ProvisionForm organizationId={orgId} locations={restaurant?.locations || []} />
+      )}
+      {credential && <CredentialResult result={credential} onClear={() => setCredential(null)} />}
+      {assignment && orgId && (
+        <StaffDutyEditor
+          member={assignment.id}
+          user={assignment.user_id}
+          org={orgId}
+          locations={restaurant?.locations || []}
+          onClose={() => setAssignment(null)}
+          onSaved={() => {
+            setAssignment(null);
+            void load();
+          }}
+        />
+      )}
+      <button
+        className="underline p-2"
+        onClick={async () => {
+          const result = await supabase
+            .from('audit_logs')
+            .select('id,action,entity_type,created_at')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(30);
+          if (result.error) setError(result.error.message);
+          else setActivity(result.data || []);
+        }}
+      >
+        Review recent activity
+      </button>
+      {activity && (
+        <section className="my-3 p-3 border rounded-xl">
+          <h2 className="font-semibold">Recent organization activity</h2>
+          {activity.length ? (
+            activity.map((a) => (
+              <p key={a.id} className="text-sm p-2 border-b">
+                {a.action} · {a.entity_type} · {new Date(a.created_at).toLocaleString()}
+              </p>
+            ))
+          ) : (
+            <p>No activity recorded.</p>
+          )}
+        </section>
+      )}
+
       {error && (
         <p role="alert" className="p-3 bg-red-50 text-red-700">
           {error}
@@ -223,6 +279,38 @@ export const AdminUsersView: React.FC = () => {
                 <tr key={s.id} className="border-t border-[#f0efe9]">
                   <td className="px-4 py-3 font-medium text-[#242424]">{s.profile_name || '—'}</td>
                   <td className="px-4 py-3">
+                    {staff?.role === 'owner' && !['owner', 'admin'].includes(s.role) && (
+                      <button
+                        disabled={resetBusy}
+                        className="underline block p-2"
+                        onClick={async () => {
+                          if (resetBusy) return;
+                          setResetBusy(true);
+                          setError(null);
+                          try {
+                            setCredential(
+                              await submitProvision(`${user?.id}:reset:${s.id}`, 'reset', {
+                                organization_id: orgId,
+                                member_id: s.id,
+                              }),
+                            );
+                          } catch (e) {
+                            setError(
+                              e instanceof Error ? e.message : 'Credential reset not confirmed.',
+                            );
+                          } finally {
+                            setResetBusy(false);
+                          }
+                        }}
+                      >
+                        Reset temporary credential
+                      </button>
+                    )}
+                    {staff?.role === 'owner' && !['owner', 'admin'].includes(s.role) && (
+                      <button className="underline block p-2" onClick={() => setAssignment(s)}>
+                        Edit duty and locations
+                      </button>
+                    )}
                     <select
                       value={s.role}
                       onChange={(e) => updateStaffRole(s.id, e.target.value as StaffRole)}
